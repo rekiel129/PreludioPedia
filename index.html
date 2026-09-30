@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f1f3f5">
+  <title>PreludioPedia · La Wiki de todos los preludianos</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script>window.MathJax={tex:{inlineMath:[['\\(','\\)']],displayMath:[['$$','$$']]},options:{skipHtmlTags:['script','noscript','style','textarea','pre','code']}};</script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div class="app-frame">
+    <header class="topbar">
+      <button class="icon-button mobile-menu" id="menu-toggle" aria-label="Abrir menú">☰</button>
+      <a class="brand" href="#" data-action="go-home" aria-label="PreludioPedia, inicio">
+        <span class="brand-mark" aria-hidden="true">P</span>
+        <span class="brand-copy"><strong>PreludioPedia</strong><small>La Wiki de todos los preludianos</small></span>
+      </a>
+      <div class="search-wrap">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input id="search" type="search" placeholder="Buscar artículos" autocomplete="off" aria-label="Buscar artículos">
+        <div class="search-results" id="search-results" hidden></div>
+      </div>
+      <div class="top-actions">
+        <button class="icon-button" id="theme-toggle" title="Cambiar tema" aria-label="Cambiar tema">◐</button>
+        <button class="outline-button reading-top" data-action="reading-settings" title="Preferencias de lectura">Aa <span>Lectura</span></button>
+        <button class="outline-button customize-top" data-action="customize">Personalizar</button>
+        <button class="primary-button small" data-action="create">＋ <span>Crear artículo</span></button>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar" id="sidebar">
+        <div class="side-scroll">
+          <div class="side-label">WIKI</div>
+          <button class="nav-item active" data-page="home"><span class="nav-icon">⌂</span> Inicio</button>
+          <button class="nav-item" data-page="articles"><span class="nav-icon">▤</span> Artículos <span class="nav-count" id="article-count">0</span></button>
+          <button class="nav-item" data-action="create"><span class="nav-icon">＋</span> Crear artículo</button>
+          <div class="side-label side-label-spaced">CARPETAS</div>
+          <div id="folder-nav"></div>
+          <button class="nav-item" data-action="create-folder"><span class="nav-icon">＋</span> Nueva carpeta</button>
+          <div class="side-label side-label-spaced">TU ESPACIO</div>
+          <button class="nav-item" data-action="customize"><span class="nav-icon">✦</span> Apariencia y diseño</button>
+        </div>
+        <div class="sidebar-footer"><span class="online-indicator"></span> PreludioPedia <span class="footer-separator">·</span> Guardado local</div>
+      </aside>
+      <main class="main-area" id="main-area"><div id="view"></div></main>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="modal-backdrop" hidden>
+    <section class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <header class="modal-header">
+        <div><div class="eyebrow" id="modal-eyebrow">PreludioPedia</div><h2 id="modal-title"></h2></div>
+        <button class="icon-button" data-action="close-modal" aria-label="Cerrar">×</button>
+      </header>
+      <div class="modal-content" id="modal-content"></div>
+      <footer class="modal-footer" id="modal-footer"></footer>
+    </section>
+  </div>
+
+  <input type="file" id="image-input" accept="image/*" hidden>
+  <input type="file" id="video-input" accept="video/*" hidden>
+  <input type="file" id="wallpaper-input" accept="image/*" hidden>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
+
