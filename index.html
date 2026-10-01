@@ -10,6 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
   <script>window.MathJax={tex:{inlineMath:[['\\(','\\)']],displayMath:[['$$','$$']]},options:{skipHtmlTags:['script','noscript','style','textarea','pre','code']}};</script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js"></script>
   <script defer src="app.js"></script>
 </head>
@@ -30,6 +31,7 @@
         <button class="icon-button" id="theme-toggle" title="Cambiar tema" aria-label="Cambiar tema">◐</button>
         <button class="outline-button reading-top" data-action="reading-settings" title="Preferencias de lectura">Aa <span>Lectura</span></button>
         <button class="outline-button customize-top" data-action="customize">Personalizar</button>
+        <button class="outline-button" id="auth-button" data-action="auth">Iniciar sesión</button>
         <button class="primary-button small" data-action="create">＋ <span>Crear artículo</span></button>
       </div>
     </header>
@@ -46,7 +48,7 @@
           <div class="side-label side-label-spaced">TU ESPACIO</div>
           <button class="nav-item" data-action="customize"><span class="nav-icon">✦</span> Apariencia y diseño</button>
         </div>
-        <div class="sidebar-footer"><span class="online-indicator"></span> PreludioPedia <span class="footer-separator">·</span> Guardado local</div>
+        <div class="sidebar-footer"><span class="online-indicator"></span> PreludioPedia <span class="footer-separator">·</span> <span id="storage-label">Conectando nube…</span></div>
       </aside>
       <main class="main-area" id="main-area"><div id="view"></div></main>
     </div>
