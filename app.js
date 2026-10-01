@@ -1,5 +1,9 @@
 (() => {
   const KEY='preludiopedia-local-v1';
+  const BACKUP_KEY='preludiopedia-device-backup-v1';
+  const SUPABASE_URL='https://ohqunzhslyxzhtwkfvof.supabase.co';
+  // Esta clave publishable está diseñada para estar en el navegador. Nunca pongas aquí una service_role key.
+  const SUPABASE_PUBLISHABLE_KEY='sb_publishable_VPhsSnRJnQ987RhR0_afTw_roajjBJU';
   const initial={
     articles:[],
     folders:[],
@@ -9,8 +13,10 @@
   };
   let state=load(), page='home', articleId='', editorId='', activeFolderId='', articleTab='article', selectedDesign='minimal', range=null, pickedMedia=null, slideIndex=0;
   let pendingWallpaper, audioRecorder=null, audioStream=null, recognition=null, cameraStream=null, cameraRecorder=null, cameraParts=[], cancelCamera=false, toastTimer;
+  let supabase=null,currentUser=null,cloudReady=false,cloudWriteEnabled=false,pendingLocalImport=null,syncTimer=null,syncQueue=Promise.resolve();
+  const knownComments=new Set(),knownRevisions=new Set();
   const view=document.getElementById('view'), modal=document.getElementById('modal'), backdrop=document.getElementById('modal-backdrop'), content=document.getElementById('modal-content'), footer=document.getElementById('modal-footer');
-  function id(){return crypto.randomUUID?.()||'p-'+Date.now()+'-'+Math.random().toString(36).slice(2)}
+  function id(){return crypto.randomUUID?.()||'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c==='x'?r:(r&3|8)).toString(16)})}
   function load(){
     const migrationKey='preludiopedia-folders-cleared-v1';
     try{
@@ -30,6 +36,99 @@
     return JSON.parse(JSON.stringify(initial))
   }
   function save(){try{localStorage.setItem(KEY,JSON.stringify(state));count();return true}catch(_){toast('Almacenamiento local lleno. Reduce el tamaño de los archivos.');return false}}
+  const isUuid=v=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v||''));
+  const hasSharedContent=s=>!!(s?.articles?.length||s?.folders?.length||s?.comments?.length||s?.revisions?.length);
+  function setCloudStatus(message){const el=document.getElementById('storage-label');if(el)el.textContent=message}
+  function updateAuthUI(){const b=document.getElementById('auth-button');if(b){b.textContent=currentUser?(currentUser.email?.split('@')[0]||'Mi cuenta'):'Iniciar sesión';b.title=currentUser?'Cuenta y cierre de sesión':'Inicia sesión para editar y colaborar'}setCloudStatus(currentUser?(cloudReady?'Guardado en la nube':'Conectando nube…'):'Lectura pública · inicia sesión para editar')}
+  function requireEditor(){if(currentUser)return true;toast('Inicia sesión para crear y editar en la wiki.');authDialog();return false}
+  function authDialog(){
+    if(currentUser){showModal('Tu cuenta','<p class="help-text">Sesión iniciada como</p><p><strong>'+esc(currentUser.email||'Usuario de PreludioPedia')+'</strong></p><p class="help-text">Tus artículos y cambios se guardan en la nube.</p>','<button class="outline-button" data-action="close">Cerrar</button><button class="primary-button" data-action="sign-out">Cerrar sesión</button>',true);return}
+    showModal('Participar en PreludioPedia','<p class="help-text">La lectura es pública. Inicia sesión o crea una cuenta para escribir, comentar y guardar cambios compartidos.</p><label class="form-label" for="auth-email">Correo electrónico</label><input class="form-input" id="auth-email" type="email" autocomplete="email" placeholder="tu@colegio.edu"><label class="form-label" for="auth-password">Contraseña</label><input class="form-input" id="auth-password" type="password" autocomplete="current-password" placeholder="Al menos 6 caracteres">','<button class="outline-button" data-action="close">Cancelar</button><button class="outline-button" data-action="sign-up">Crear cuenta</button><button class="primary-button" data-action="sign-in">Iniciar sesión</button>',true)
+  }
+  async function performAuth(mode){
+    if(!supabase){toast('Supabase todavía no está listo. Recarga la página e inténtalo de nuevo.');return}
+    const email=document.getElementById('auth-email')?.value.trim(),password=document.getElementById('auth-password')?.value||'';
+    if(!email||!password){toast('Escribe tu correo y contraseña.');return}
+    if(password.length<6){toast('La contraseña debe tener al menos 6 caracteres.');return}
+    setCloudStatus('Conectando…');
+    let result;try{result=mode==='sign-up'?await supabase.auth.signUp({email,password}):await supabase.auth.signInWithPassword({email,password})}catch(error){setCloudStatus('Sin sincronizar');toast(authError(error));return}
+    if(result.error){setCloudStatus('Sin sincronizar');toast(result.error.message||'No se pudo iniciar sesión.');return}
+    if(mode==='sign-up'&&!result.data.session){hideModal();toast('Cuenta creada. Revisa tu correo para confirmarla y luego inicia sesión.');return}
+    currentUser=result.data.user||result.data.session?.user||currentUser;updateAuthUI();hideModal();await refreshCloudData()
+  }
+  function authError(error){return error?.message||'No se pudo conectar con Supabase.'}
+  function localBackup(){try{if(!localStorage.getItem(BACKUP_KEY))localStorage.setItem(BACKUP_KEY,JSON.stringify(state))}catch(_){}}
+  function showLocalImportDialog(){if(!currentUser||!pendingLocalImport||backdrop.hidden===false)return;showModal('Encontré contenido guardado en este dispositivo','<p class="help-text">Esta copia local todavía no está en la wiki compartida. Puedes importarla ahora o conservarla solo en este navegador.</p><ul><li>'+pendingLocalImport.articles.length+' artículos</li><li>'+pendingLocalImport.folders.length+' carpetas</li><li>'+pendingLocalImport.comments.length+' comentarios</li></ul>','<button class="outline-button" data-action="use-cloud">Usar la wiki en la nube</button><button class="primary-button" data-action="import-local">Importar esta copia</button>')}
+  function remoteDataEmpty(data){return !data.articles.length&&!data.folders.length&&!data.comments.length&&!data.revisions.length}
+  let refreshSequence=0;
+  async function refreshCloudData(){
+    if(!supabase)return;const sequence=++refreshSequence,local=JSON.parse(JSON.stringify(state));setCloudStatus('Cargando…');
+    let results;try{results=await Promise.all([supabase.from('articles').select('*').order('updated_at',{ascending:false}),supabase.from('folders').select('*').order('created_at',{ascending:true}),supabase.from('comments').select('*').order('created_at',{ascending:false}),supabase.from('revisions').select('*').order('created_at',{ascending:false})])}catch(error){cloudReady=false;cloudWriteEnabled=false;setCloudStatus('Sin sincronizar');render();toast('No se pudo leer la wiki en la nube: '+authError(error));return}
+    if(sequence!==refreshSequence)return;const failed=results.find(r=>r.error);if(failed){cloudReady=false;cloudWriteEnabled=false;setCloudStatus('Sin sincronizar');toast('No se pudo leer la wiki en la nube: '+authError(failed.error));render();return}
+    const [articleResult,folderResult,commentResult,revisionResult]=results;
+    const data={articles:(articleResult.data||[]).map(r=>({id:r.id,title:r.title,body:r.body_html||'',designId:r.design_id||'minimal',folderId:r.folder_id||'',createdBy:r.created_by||'',created:r.created_at,updated:r.updated_at})),folders:(folderResult.data||[]).map(r=>({id:r.id,name:r.name,description:r.description||'',createdBy:r.created_by||'',created:r.created_at})),comments:(commentResult.data||[]).map(r=>({id:r.id,articleId:r.article_id,authorId:r.author_id||'',author:r.author_name||'Preludiano/a',body:r.body,date:r.created_at})),revisions:(revisionResult.data||[]).map(r=>({id:r.id,articleId:r.article_id,editorId:r.editor_id||'',title:r.title,body:r.body_html||'',date:r.created_at}))};
+    knownComments.clear();data.comments.forEach(c=>knownComments.add(c.id));knownRevisions.clear();data.revisions.forEach(r=>knownRevisions.add(r.id));
+    if(remoteDataEmpty(data)&&hasSharedContent(local)){
+      state=local;pendingLocalImport=JSON.parse(JSON.stringify(local));cloudWriteEnabled=false;
+    }else{
+      if(hasSharedContent(local)&&remoteDataEmpty(data)===false)localBackup();
+      state={...JSON.parse(JSON.stringify(initial)),design:local.design,reading:local.reading,...data};pendingLocalImport=null;cloudWriteEnabled=true;
+    }
+    cloudReady=true;save();render();updateAuthUI();if(currentUser&&pendingLocalImport)showLocalImportDialog()
+  }
+  function mapLegacyIds(){
+    const articleIds=new Map(),folderIds=new Map(),fix=(value,map)=>{if(!value)return '';if(isUuid(value))return value;if(!map.has(value))map.set(value,id());return map.get(value)};
+    state.articles.forEach(a=>{a.id=fix(a.id,articleIds)});state.folders.forEach(f=>{f.id=fix(f.id,folderIds)});
+    state.articles.forEach(a=>{a.folderId=folderIds.get(a.folderId)||'';a.createdBy=currentUser.id});
+    state.folders.forEach(f=>{f.createdBy=currentUser.id});state.comments.forEach(c=>{c.id=fix(c.id,new Map());c.articleId=articleIds.get(c.articleId)||c.articleId;c.authorId=currentUser.id});state.revisions.forEach(r=>{r.id=fix(r.id,new Map());r.articleId=articleIds.get(r.articleId)||r.articleId;r.editorId=currentUser.id})
+  }
+  async function uploadMediaFile(file){
+    if(!supabase||!currentUser){toast('Inicia sesión para subir archivos a la wiki.');return null}
+    const rawExt=(file.name||'').split('.').pop()?.toLowerCase(),safeExt=/^[a-z0-9]{1,8}$/.test(rawExt||'')?rawExt:({ 'image/jpeg':'jpg','image/png':'png','image/gif':'gif','image/webp':'webp','video/webm':'webm','video/mp4':'mp4','audio/webm':'webm','audio/ogg':'ogg','audio/mpeg':'mp3' }[file.type]||'bin');
+    const path=currentUser.id+'/'+id()+'.'+safeExt;setCloudStatus('Subiendo archivo…');
+    let data,error;try{({data,error}=await supabase.storage.from('wiki-media').upload(path,file,{cacheControl:'3600',contentType:file.type||'application/octet-stream',upsert:false}))}catch(problem){setCloudStatus('Sin sincronizar');toast('No se pudo subir el archivo: '+authError(problem));return null}
+    if(error){setCloudStatus('Sin sincronizar');toast('No se pudo subir el archivo: '+authError(error));return null}
+    const result=supabase.storage.from('wiki-media').getPublicUrl(data.path);setCloudStatus('Archivo subido');return result.data.publicUrl
+  }
+  async function externalizeInlineMedia(html){
+    const root=document.createElement('div');root.innerHTML=clean(html);
+    for(const media of root.querySelectorAll('img[src],video[src],audio[src]')){
+      const match=media.getAttribute('src')?.match(/^data:([^;,]+);base64,([\s\S]+)$/);if(!match)continue;
+      const bytes=Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0)),type=match[1],ext=type.split('/')[1]?.replace('jpeg','jpg')||'bin',file=new File([bytes],'import-'+id()+'.'+ext,{type});
+      const url=await uploadMediaFile(file);if(!url)throw new Error('No se pudo migrar uno de los archivos multimedia.');media.setAttribute('src',url)
+    }
+    return clean(root.innerHTML)
+  }
+  async function syncCloudNow(){
+    if(!supabase||!currentUser||!cloudWriteEnabled)return;
+    for(const item of [...state.articles,...state.revisions])if(/data:(image|video|audio)\//i.test(item.body||''))item.body=await externalizeInlineMedia(item.body);
+    const now=new Date().toISOString();
+    const folders=state.folders.map(f=>({id:f.id,name:f.name,description:f.description||'',created_by:f.createdBy||currentUser.id,created_at:f.created||now}));
+    if(folders.length){const {error}=await supabase.from('folders').upsert(folders,{onConflict:'id'});if(error)throw error}
+    const articles=state.articles.map(a=>({id:a.id,title:a.title,body_html:clean(a.body),design_id:a.designId||'minimal',folder_id:a.folderId||null,created_by:a.createdBy||currentUser.id,created_at:a.created||now,updated_at:a.updated||now}));
+    if(articles.length){const {error}=await supabase.from('articles').upsert(articles,{onConflict:'id'});if(error)throw error}
+    const comments=state.comments.filter(c=>!knownComments.has(c.id)).map(c=>({id:c.id,article_id:c.articleId,author_id:c.authorId||currentUser.id,author_name:c.author||'Preludiano/a',body:c.body,created_at:c.date||now}));
+    if(comments.length){const {error}=await supabase.from('comments').upsert(comments,{onConflict:'id',ignoreDuplicates:true});if(error)throw error;comments.forEach(c=>knownComments.add(c.id))}
+    const revisions=state.revisions.filter(r=>!knownRevisions.has(r.id)).map(r=>({id:r.id,article_id:r.articleId,editor_id:r.editorId||currentUser.id,title:r.title,body_html:clean(r.body),created_at:r.date||now}));
+    if(revisions.length){const {error}=await supabase.from('revisions').upsert(revisions,{onConflict:'id',ignoreDuplicates:true});if(error)throw error;revisions.forEach(r=>knownRevisions.add(r.id))}
+    save();setCloudStatus('Guardado en la nube')
+  }
+  function queueCloudSync(){
+    if(!supabase||!currentUser||!cloudReady||!cloudWriteEnabled)return;clearTimeout(syncTimer);setCloudStatus('Sincronizando…');
+    syncTimer=setTimeout(()=>{syncQueue=syncQueue.then(syncCloudNow).catch(error=>{setCloudStatus('Sin sincronizar');toast('El cambio quedó en este dispositivo, pero no se sincronizó: '+authError(error))})},350)
+  }
+  async function importLocalData(){
+    if(!requireEditor()||!pendingLocalImport)return;state=JSON.parse(JSON.stringify(pendingLocalImport));state.design=state.design||initial.design;state.reading=state.reading||initial.reading;mapLegacyIds();
+    try{for(const a of state.articles)a.body=await externalizeInlineMedia(a.body);cloudWriteEnabled=true;await syncCloudNow();pendingLocalImport=null;hideModal();save();render();toast('La copia local ya está en la wiki compartida.')}catch(error){cloudWriteEnabled=false;toast('No se pudo completar la importación: '+authError(error))}
+  }
+  function useCloudCopy(){localBackup();state={...JSON.parse(JSON.stringify(initial)),design:state.design,reading:state.reading};pendingLocalImport=null;cloudWriteEnabled=true;save();hideModal();render();setCloudStatus('Guardado en la nube')}
+  async function startSupabase(){
+    if(!window.supabase?.createClient){setCloudStatus('Modo local');render();toast('No se cargó Supabase. Revisa tu conexión a internet.');return}
+    supabase=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+    const {data,error}=await supabase.auth.getSession();if(error)throw error;currentUser=data.session?.user||null;updateAuthUI();
+    supabase.auth.onAuthStateChange((_event,session)=>{currentUser=session?.user||null;updateAuthUI();setTimeout(()=>refreshCloudData(),0)});
+    await refreshCloudData()
+  }
   function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
   function linkUrl(v){v=String(v||'').trim();return /^(https?:|mailto:|tel:|#|\/)/i.test(v)&&!/^\/\//.test(v)?v:''}
   function mediaUrl(v){v=String(v||'').trim();return /^https?:\/\//i.test(v)||/^data:(image|video|audio)\/[\w.+-]+;base64,/i.test(v)?v:''}
@@ -149,29 +248,34 @@
   }
   function hideAux(){const a=document.getElementById('editor-aux');if(a)a.hidden=true}
   function createDialog(folderId=''){
+    if(!requireEditor())return;
     selectedDesign='minimal';
     const options='<option value="">Sin carpeta</option>'+state.folders.map(f=>`<option value="${esc(f.id)}" ${f.id===folderId?'selected':''}>${esc(f.name)}</option>`).join('');
     const cards=designDefs.map(d=>`<button class="template-card design-option design-option-${d.id} ${d.id==='minimal'?'selected':''}" data-template="${d.id}"><span class="design-preview preview-${d.id}" aria-hidden="true"><i></i><b></b><em></em></span><strong>${esc(d.name)}</strong><small>${esc(d.desc)}</small></button>`).join('');
     showModal('Crear artículo','<p class="help-text">Elige una apariencia visual. El artículo empezará vacío y podrás escribirlo y personalizarlo como quieras.</p><label class="form-label" for="new-title">Título</label><input class="form-input" id="new-title" maxlength="120" placeholder="Título del artículo"><label class="form-label" for="new-folder">Carpeta</label><select class="form-select" id="new-folder">'+options+'</select><label class="form-label">Diseño base · 8 estilos</label><div class="template-grid">'+cards+'</div>','<button class="outline-button" data-action="close">Cancelar</button><button class="primary-button" data-action="create-confirm">Crear y escribir →</button>')
   }
   function create(){
+    if(!requireEditor())return;
     const title=document.getElementById('new-title')?.value.trim();if(!title){toast('Escribe el título del artículo.');return}
     if(state.articles.some(a=>a.title.toLowerCase()===title.toLowerCase())){toast('Ya existe un artículo con ese título.');return}
-    const a={id:id(),title,body:'',designId:selectedDesign,folderId:document.getElementById('new-folder')?.value||'',created:new Date().toISOString(),updated:new Date().toISOString()};state.articles.unshift(a);save();hideModal();edit(a.id)
+    const a={id:id(),title,body:'',designId:selectedDesign,folderId:document.getElementById('new-folder')?.value||'',createdBy:currentUser?.id||'',created:new Date().toISOString(),updated:new Date().toISOString()};state.articles.unshift(a);save();queueCloudSync();hideModal();edit(a.id)
   }
   function folderDialog(folder=null){
+    if(!requireEditor())return;
     const editing=!!folder;
     showModal(editing?'Editar carpeta':'Crear carpeta','<p class="help-text">Organiza artículos por temas, proyectos o comunidades del colegio.</p><label class="form-label">Nombre de la carpeta</label><input class="form-input" id="folder-name" maxlength="70" value="'+esc(folder?.name||'')+'" placeholder="Ej. Club de ciencias"><label class="form-label">Descripción</label><textarea class="form-textarea" id="folder-description" placeholder="Qué tipo de contenido reúne esta carpeta">'+esc(folder?.description||'')+'</textarea>', '<button class="outline-button" data-action="close">Cancelar</button><button class="primary-button" data-action="save-folder" data-id="'+(folder?.id||'')+'">Guardar carpeta</button>',true)
   }
   function saveFolder(folderIdValue=''){
+    if(!requireEditor())return;
     const name=document.getElementById('folder-name')?.value.trim();if(!name){toast('Escribe un nombre para la carpeta.');return}
     const description=document.getElementById('folder-description')?.value.trim()||'';
     const existing=state.folders.find(f=>f.id===folderIdValue);
     if(state.folders.some(f=>f.id!==folderIdValue&&f.name.toLowerCase()===name.toLowerCase())){toast('Ya existe una carpeta con ese nombre.');return}
-    if(existing){existing.name=name;existing.description=description}else state.folders.push({id:id(),name,description});
-    save();hideModal();render();toast(existing?'Carpeta actualizada.':'Carpeta creada.')
+    if(existing){existing.name=name;existing.description=description}else state.folders.push({id:id(),name,description,createdBy:currentUser?.id||'',created:new Date().toISOString()});
+    save();queueCloudSync();hideModal();render();toast(existing?'Carpeta actualizada.':'Carpeta creada.')
   }
   function edit(idValue){
+    if(!requireEditor())return;
     const a=state.articles.find(x=>x.id===idValue);if(!a)return;editorId=a.id;range=null;pickedMedia=null;
     const designId=designDefs.some(d=>d.id===a.designId)?a.designId:'minimal';
     const body=clean(a.body);
@@ -203,8 +307,11 @@
   function wordCount(){const e=editor(),w=document.getElementById('word-count');if(e&&w){const n=e.innerText.trim().split(/\s+/).filter(Boolean).length;w.textContent=n+' '+(n===1?'palabra':'palabras')}}
   function command(cmd){focusEditor();if(cmd==='formatBlock')document.execCommand(cmd,false,document.getElementById('block-format')?.value||'P');else document.execCommand(cmd,false,null);saveRange();wordCount()}
   function fileData(file,done){const r=new FileReader();r.onload=()=>done(String(r.result));r.onerror=()=>toast('No se pudo leer el archivo.');r.readAsDataURL(file)}
-  function addImage(file){if(!file?.type.startsWith('image/'))return;if(file.size>3000000){toast('La imagen supera el límite local de 3 MB.');return}fileData(file,src=>{insert(`<img src="${src}" alt="${esc(file.name)}" title="${esc(file.name)}" style="width:45%;max-width:100%;height:auto;vertical-align:middle" draggable="true">`);toast('Imagen insertada. Ajusta su ancho desde «Más opciones».')})}
-  function addVideo(file){if(!file?.type.startsWith('video/'))return;if(file.size>5000000){toast('El video supera el límite local de 5 MB.');return}fileData(file,src=>insert(`<video controls playsinline style="width:min(100%,640px)" src="${src}"></video>`))}
+  async function addImage(file,alt=file?.name||'Imagen'){
+    if(!file?.type.startsWith('image/'))return;if(file.size>3000000){toast('La imagen supera el límite de 3 MB.');return}
+    const src=await uploadMediaFile(file);if(src){insert(`<img src="${esc(src)}" alt="${esc(alt)}" title="${esc(file.name||alt)}" style="width:45%;max-width:100%;height:auto;vertical-align:middle" draggable="true">`);toast('Imagen subida e insertada. Ajusta su ancho desde «Más opciones».')}
+  }
+  async function addVideo(file){if(!file?.type.startsWith('video/'))return;if(file.size>5000000){toast('El video supera el límite de 5 MB.');return}const src=await uploadMediaFile(file);if(src)insert(`<video controls playsinline style="width:min(100%,640px)" src="${esc(src)}"></video>`)}
   function openLink(){
     saveRange();const label=getSelection()?.toString()||'';
     showAux('Insertar enlace','<p class="help-text">Asocia una dirección web al texto seleccionado o escribe el texto del enlace.</p><label class="form-label">Dirección web</label><input class="form-input" id="link-url" placeholder="https://…"><label class="form-label">Texto visible</label><input class="form-input" id="link-label" value="'+esc(label)+'" placeholder="Texto del enlace">','<button class="outline-button" data-action="close-aux">Cancelar</button><button class="primary-button" data-action="save-link">Insertar enlace</button>')
@@ -235,7 +342,7 @@
   }
   async function startAudio(){
     if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){toast('La grabación de audio no está disponible aquí.');return}
-    try{audioStream=await navigator.mediaDevices.getUserMedia({audio:true});if(backdrop.hidden){audioStream.getTracks().forEach(t=>t.stop());audioStream=null;return}const parts=[];audioRecorder=new MediaRecorder(audioStream);audioRecorder.ondataavailable=e=>{if(e.data.size)parts.push(e.data)};audioRecorder.onstop=()=>{audioStream?.getTracks().forEach(t=>t.stop());audioStream=null;const blob=new Blob(parts,{type:audioRecorder?.mimeType||'audio/webm'});audioRecorder=null;if(blob.size>4000000){toast('La nota supera el límite local de 4 MB.');return}fileData(blob,src=>insert(`<audio controls src="${src}"></audio>`))};audioRecorder.start();toast('Grabando. Pulsa 🎙 para detener.')}catch(_){toast('No se pudo acceder al micrófono. Comprueba los permisos.')}
+    try{audioStream=await navigator.mediaDevices.getUserMedia({audio:true});if(backdrop.hidden){audioStream.getTracks().forEach(t=>t.stop());audioStream=null;return}const parts=[];audioRecorder=new MediaRecorder(audioStream);audioRecorder.ondataavailable=e=>{if(e.data.size)parts.push(e.data)};audioRecorder.onstop=()=>{audioStream?.getTracks().forEach(t=>t.stop());audioStream=null;const blob=new Blob(parts,{type:audioRecorder?.mimeType||'audio/webm'});audioRecorder=null;if(blob.size>4000000){toast('La nota supera el límite de 4 MB.');return}uploadMediaFile(new File([blob],'nota-de-audio.webm',{type:blob.type||'audio/webm'})).then(src=>{if(src)insert(`<audio controls src="${esc(src)}"></audio>`)})};audioRecorder.start();toast('Grabando. Pulsa 🎙 para detener.')}catch(_){toast('No se pudo acceder al micrófono. Comprueba los permisos.')}
   }
   async function openCamera(){
     const panel=document.getElementById('capture-panel');if(!panel)return;
@@ -245,7 +352,7 @@
   }
   function startCamera(){
     if(!cameraStream)return;cameraParts=[];cancelCamera=false;
-    try{cameraRecorder=new MediaRecorder(cameraStream);cameraRecorder.ondataavailable=e=>{if(e.data.size)cameraParts.push(e.data)};cameraRecorder.onstop=()=>{cameraStream?.getTracks().forEach(t=>t.stop());cameraStream=null;if(cancelCamera)return;const blob=new Blob(cameraParts,{type:cameraRecorder?.mimeType||'video/webm'});cameraRecorder=null;if(blob.size>5000000){toast('El video supera el límite local de 5 MB.');return}fileData(blob,src=>insert(`<video controls playsinline style="width:min(100%,640px)" src="${src}"></video>`))};cameraRecorder.start();document.getElementById('capture-status').textContent='Grabando. Detén para insertar el video.';document.querySelector('[data-action="start-camera"]').hidden=true;document.querySelector('[data-action="stop-camera"]').hidden=false}catch(_){toast('No se pudo iniciar la grabación.')}
+    try{cameraRecorder=new MediaRecorder(cameraStream);cameraRecorder.ondataavailable=e=>{if(e.data.size)cameraParts.push(e.data)};cameraRecorder.onstop=()=>{cameraStream?.getTracks().forEach(t=>t.stop());cameraStream=null;if(cancelCamera)return;const blob=new Blob(cameraParts,{type:cameraRecorder?.mimeType||'video/webm'});cameraRecorder=null;if(blob.size>5000000){toast('El video supera el límite de 5 MB.');return}uploadMediaFile(new File([blob],'grabacion.webm',{type:blob.type||'video/webm'})).then(src=>{if(src)insert(`<video controls playsinline style="width:min(100%,640px)" src="${esc(src)}"></video>`)})};cameraRecorder.start();document.getElementById('capture-status').textContent='Grabando. Detén para insertar el video.';document.querySelector('[data-action="start-camera"]').hidden=true;document.querySelector('[data-action="stop-camera"]').hidden=false}catch(_){toast('No se pudo iniciar la grabación.')}
   }
   function stopCamera(cancel=false){if(cancel)cancelCamera=true;if(cameraRecorder?.state==='recording')cameraRecorder.stop();cameraStream?.getTracks().forEach(t=>t.stop());cameraStream=null;const p=document.getElementById('capture-panel');if(p)p.hidden=true}
 
@@ -258,13 +365,14 @@
   function readingDialog(){showModal('Preferencias de lectura','<p class="help-text">Ajusta la lectura en todos los artículos. El valor estándar mantiene el diseño original.</p><label class="form-label">Tamaño del texto</label><select class="form-select" id="read-size"><option value="small">Pequeño</option><option value="normal">Estándar</option><option value="large">Grande</option><option value="xlarge">Muy grande</option></select><label class="form-label">Tipografía</label><select class="form-select" id="read-font"><option value="sans">Sans serif</option><option value="serif">Serif</option><option value="mono">Monoespaciada</option></select><label class="form-label">Espaciado entre líneas</label><select class="form-select" id="read-line"><option value="comfortable">Estándar</option><option value="relaxed">Amplio</option></select>','<button class="outline-button" data-action="close">Cancelar</button><button class="primary-button" data-action="save-reading">Guardar preferencias</button>',true);document.getElementById('read-size').value=state.reading.size;document.getElementById('read-font').value=state.reading.font;document.getElementById('read-line').value=state.reading.line}
   function saveReading(){state.reading={size:document.getElementById('read-size').value,font:document.getElementById('read-font').value,line:document.getElementById('read-line').value};save();hideModal();render();toast('Preferencias guardadas.')}
   function saveArticle(){
+    if(!requireEditor())return;
     const a=state.articles.find(x=>x.id===editorId),title=document.getElementById('editor-title')?.value.trim();if(!a)return;
     if(!title){toast('Escribe un título.');return}if(state.articles.some(x=>x.id!==a.id&&x.title.toLowerCase()===title.toLowerCase())){toast('Ya existe un artículo con ese título.');return}
     if(a.body!==clean(editor()?.innerHTML||'')||a.title!==title){state.revisions.unshift({id:id(),articleId:a.id,title:a.title,body:a.body,date:new Date().toISOString()});state.revisions=state.revisions.slice(0,50)}
-    a.title=title;a.body=clean(editor()?.innerHTML||'');a.updated=new Date().toISOString();save();hideModal();articleId=a.id;articleTab='article';page='article';render();toast('Artículo guardado.')
+    a.title=title;a.body=clean(editor()?.innerHTML||'');a.updated=new Date().toISOString();save();queueCloudSync();hideModal();articleId=a.id;articleTab='article';page='article';render();toast('Artículo guardado; sincronizando…')
   }
-  function saveComment(targetId){const author=document.getElementById('comment-author')?.value.trim()||'Preludiano/a',body=document.getElementById('comment-body')?.value.trim();if(!body){toast('Escribe un comentario antes de publicarlo.');return}state.comments.unshift({id:id(),articleId:targetId,author,body,date:new Date().toISOString()});save();articleTab='discussion';render();toast('Comentario publicado.')}
-  function restoreRevision(revisionId){const r=state.revisions.find(x=>x.id===revisionId),a=state.articles.find(x=>x.id===r?.articleId);if(!r||!a)return;state.revisions.unshift({id:id(),articleId:a.id,title:a.title,body:a.body,date:new Date().toISOString()});a.title=r.title;a.body=r.body;a.updated=new Date().toISOString();save();articleTab='article';render();toast('Se restauró esa versión.')}
+  function saveComment(targetId){if(!requireEditor())return;const author=document.getElementById('comment-author')?.value.trim()||'Preludiano/a',body=document.getElementById('comment-body')?.value.trim();if(!body){toast('Escribe un comentario antes de publicarlo.');return}state.comments.unshift({id:id(),articleId:targetId,authorId:currentUser.id,author,body,date:new Date().toISOString()});save();queueCloudSync();articleTab='discussion';render();toast('Comentario publicado; sincronizando…')}
+  function restoreRevision(revisionId){if(!requireEditor())return;const r=state.revisions.find(x=>x.id===revisionId),a=state.articles.find(x=>x.id===r?.articleId);if(!r||!a)return;state.revisions.unshift({id:id(),articleId:a.id,editorId:currentUser.id,title:a.title,body:a.body,date:new Date().toISOString()});a.title=r.title;a.body=r.body;a.updated=new Date().toISOString();save();queueCloudSync();articleTab='article';render();toast('Se restauró esa versión; sincronizando…')}
   function enterPresent(idValue){articleId=idValue;slideIndex=0;page='present';render();document.getElementById('presentation-view')?.requestFullscreen?.().catch(()=>{})}
   function leavePresent(){if(document.fullscreenElement)document.exitFullscreen?.().catch?.(()=>{});page='article';render()}
   function moveSlide(d){const a=state.articles.find(x=>x.id===articleId);if(!a)return;slideIndex=Math.max(0,Math.min(slides(a).length-1,slideIndex+d));render()}
@@ -280,6 +388,12 @@
     const b=e.target.closest('[data-action]');if(!b)return;
     switch(b.dataset.action){
       case 'go-home':page='home';render();break;
+      case 'auth':authDialog();break;
+      case 'sign-in':performAuth('sign-in');break;
+      case 'sign-up':performAuth('sign-up');break;
+      case 'sign-out':supabase.auth.signOut().then(({error})=>{if(error)toast(authError(error));else{currentUser=null;hideModal();refreshCloudData()}});break;
+      case 'import-local':importLocalData();break;
+      case 'use-cloud':useCloudCopy();break;
       case 'create':createDialog(b.dataset.folder||(page==='folder'?activeFolderId:''));break;
       case 'create-folder':folderDialog();break;
       case 'edit-folder':folderDialog(state.folders.find(f=>f.id===b.dataset.id)||null);break;
@@ -319,8 +433,8 @@
   });
   document.addEventListener('change',e=>{
     if(e.target.id==='block-format')command('formatBlock');
-    if(e.target.id==='image-input'){const f=e.target.files?.[0];e.target.value='';if(f){if(f.size>3000000){toast('La imagen supera 3 MB.');return}fileData(f,src=>insert(`<img src="${src}" alt="${esc(f.name)}" style="width:45%;max-width:100%;height:auto">`))}}
-    if(e.target.id==='video-input'){const f=e.target.files?.[0];e.target.value='';if(f){if(f.size>5000000){toast('El video supera 5 MB.');return}fileData(f,src=>insert(`<video controls playsinline style="width:min(100%,640px)" src="${src}"></video>`))}}
+    if(e.target.id==='image-input'){const f=e.target.files?.[0];e.target.value='';if(f)addImage(f)}
+    if(e.target.id==='video-input'){const f=e.target.files?.[0];e.target.value='';if(f)addVideo(f)}
     if(e.target.id==='design-wallpaper'){const f=e.target.files?.[0];if(!f)return;if(!f.type.startsWith('image/')||f.size>3000000){toast('Elige una imagen de hasta 3 MB.');return}fileData(f,src=>{pendingWallpaper=src;updateWallpaperPreview()})}
     if(e.target.id==='text-color'){focusEditor();document.execCommand('styleWithCSS',false,true);document.execCommand('foreColor',false,e.target.value)}
     if(e.target.id==='highlight-color'){focusEditor();document.execCommand('styleWithCSS',false,true);document.execCommand('hiliteColor',false,e.target.value)}
@@ -334,7 +448,7 @@
   document.addEventListener('paste',e=>{
     const ed=editor();if(!ed||!ed.contains(e.target))return;
     const items=[...(e.clipboardData?.items||[])],image=items.find(x=>x.type.startsWith('image/'));
-    if(image){e.preventDefault();const f=image.getAsFile();if(f){if(f.size>3000000){toast('La imagen supera 3 MB.');return}fileData(f,src=>insert(`<img src="${src}" alt="Imagen pegada" style="width:45%;max-width:100%;height:auto">`))}return}
+    if(image){e.preventDefault();const f=image.getAsFile();if(f)addImage(f,'Imagen pegada');return}
     const html=e.clipboardData?.getData('text/html');if(html){e.preventDefault();insert(clean(html))}else{const text=e.clipboardData?.getData('text/plain');if(text){e.preventDefault();insertText(text)}}
   });
   document.addEventListener('click',e=>{const m=e.target.closest('#editor-canvas img,#editor-canvas video,#editor-canvas audio');if(m)pickedMedia=m;if(!e.target.closest('.more-wrap')){const menu=document.getElementById('more-menu');if(menu)menu.hidden=true}});
@@ -347,6 +461,6 @@
     if(e.key==='Escape'&&!backdrop.hidden){const aux=document.getElementById('editor-aux');if(aux&&!aux.hidden)hideAux();else hideModal()}
   });
   window.addEventListener('beforeunload',()=>{cameraStream?.getTracks().forEach(t=>t.stop());audioStream?.getTracks().forEach(t=>t.stop());recognition?.stop?.()});
-  design();render();
+  design();render();startSupabase().catch(error=>{cloudReady=false;cloudWriteEnabled=false;setCloudStatus('Sin sincronizar');updateAuthUI();toast('No se pudo iniciar la conexión con Supabase: '+authError(error))});
 })();
 
