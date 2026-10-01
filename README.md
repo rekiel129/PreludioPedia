@@ -1,23 +1,37 @@
 # PreludioPedia
 
-Prototipo adaptable de una wiki escolar con el subtítulo **La Wiki de todos los preludianos**. Abre `index.html` en un navegador moderno.
+Wiki escolar adaptable con el subtítulo **La Wiki de todos los preludianos**. La lectura es pública; para crear o editar contenido se necesita una cuenta de Supabase.
 
-## Organización y artículos
+## Funciones
 
-- La página inicial empieza sin carpetas; el espacio queda disponible para crear las categorías que la comunidad necesite. Puedes crear y editar carpetas y filtrar sus artículos.
-- Crea artículos vacíos con uno de ocho diseños visuales: Minimal, Papel editorial, Azul sereno, Color vivo, Tarjetas, Cuaderno, Noche y Vibrante. El diseño no agrega temas, encabezados ni texto al contenido.
-- Cada artículo tiene pestañas de artículo, discusión e historial. Las revisiones guardadas se pueden restaurar.
-- El índice lateral se genera automáticamente a partir de los encabezados.
-- Personaliza el tamaño, la tipografía y el espaciado de lectura.
-- El editor permite formato, enlaces, LaTeX, imágenes, video, audio, dictado y grabación cuando el navegador tiene soporte. Ajusta tamaño, alineación, posición flotante o superpuesta y marco de las imágenes.
-- Presenta un artículo a pantalla completa; usa las flechas para cambiar de diapositiva y Esc para salir.
-- Cambia entre tema claro y oscuro, elige un color, carga una imagen de fondo y escribe CSS personalizado.
+- Carpetas para organizar artículos y ocho diseños visuales al crear uno.
+- Artículos con pestañas de lectura, discusión e historial de revisiones.
+- Índice automático a partir de encabezados.
+- Editor con formato de texto, enlaces, citas, LaTeX, imágenes, video y audio.
+- Imágenes colocables en el texto, con ajuste de tamaño, alineación y marco.
+- Presentación a pantalla completa, con controles y navegación por teclado.
+- Tema claro u oscuro, colores, imagen de fondo, CSS personalizado y preferencias de lectura.
+- Inicio de sesión y guardado compartido en Supabase.
 
-## Guardado y límites
+## Supabase
 
-El contenido, las imágenes y los ajustes se guardan en `localStorage` de este navegador. Los archivos multimedia se incluyen como datos locales: imágenes y fondos hasta 3 MB; videos y audios hasta 5 MB y 4 MB, respectivamente. El navegador puede pedir permiso para usar la cámara o el micrófono.
+`app.js` contiene la Project URL y la **publishable key**, que está diseñada para usarse en código de navegador y puede estar en un repositorio público. No agregues una clave `service_role` o una clave secreta al frontend.
 
-Este prototipo todavía no comparte ni sincroniza el contenido entre personas o dispositivos. Para publicarlo en un dominio como wiki escolar colaborativa, habrá que conectar una API, una base de datos, cuentas/permisos y almacenamiento de archivos.
+El proyecto se conecta a las tablas `articles`, `folders`, `comments` y `revisions`, y al bucket público `wiki-media`. Los visitantes pueden leer; los usuarios autenticados pueden editar, comentar y subir archivos. Las imágenes se limitan a 3 MB; los videos, a 5 MB; y las notas de audio, a 4 MB. Los archivos que se publican en ese bucket pueden abrirse mediante su URL pública.
 
-La vista previa de LaTeX usa MathJax y las fuentes se cargan desde CDNs, por lo que esas partes necesitan conexión a internet.
+### Preparar el inicio de sesión
+
+1. Publica la carpeta del sitio en GitHub Pages o en un servidor HTTPS. Abrir `index.html` como archivo `file:///` sirve para la vista local, pero usa la URL publicada para las cuentas y los correos de confirmación.
+2. En Supabase, abre **Authentication → URL Configuration**. Define **Site URL** con la URL que muestra GitHub Pages para este repositorio y agrégala también a **Redirect URLs**. Usa la dirección exacta, incluida la ruta `/PreludioPedia/` si GitHub Pages la muestra.
+3. Abre la wiki, pulsa **Iniciar sesión** y crea una cuenta. Si Supabase pide confirmar el correo, usa el enlace que envía y luego inicia sesión.
+
+El proyecto conserva las reglas RLS del SQL que se ejecutó en Supabase; no uses la clave de administrador en la app.
+
+## Guardado y migración
+
+Con sesión iniciada, los artículos, carpetas, comentarios, revisiones e imágenes se comparten mediante Supabase. La apariencia y las preferencias de lectura siguen guardadas en el navegador actual.
+
+Si este navegador tiene artículos locales y la base en la nube aún está vacía, PreludioPedia pregunta si quieres importarlos o empezar con la copia de la nube. Si eliges empezar con la nube, guarda una copia de los datos locales en el almacenamiento de este navegador antes de cambiar la vista.
+
+La vista previa de LaTeX usa MathJax y las fuentes se cargan desde CDNs, por lo que estas partes necesitan conexión a internet.
 
