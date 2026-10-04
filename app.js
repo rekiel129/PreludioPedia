@@ -13,7 +13,7 @@
   };
   let state=load(), page='home', articleId='', editorId='', activeFolderId='', articleTab='article', selectedDesign='minimal', range=null, pickedMedia=null, slideIndex=0;
   let pendingWallpaper, audioRecorder=null, audioStream=null, recognition=null, cameraStream=null, cameraRecorder=null, cameraParts=[], cancelCamera=false, toastTimer;
-  let supabase=null,currentUser=null,cloudReady=false,cloudWriteEnabled=false,pendingLocalImport=null,syncTimer=null,syncQueue=Promise.resolve();
+  let supabase=null,currentUser=null,cloudReady=false,cloudWriteEnabled=false,pendingLocalImport=null,syncQueue=Promise.resolve();
   const knownComments=new Set(),knownRevisions=new Set();
   const view=document.getElementById('view'), modal=document.getElementById('modal'), backdrop=document.getElementById('modal-backdrop'), content=document.getElementById('modal-content'), footer=document.getElementById('modal-footer');
   function id(){return crypto.randomUUID?.()||'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c==='x'?r:(r&3|8)).toString(16)})}
@@ -65,9 +65,24 @@
     }catch(error){setCloudStatus('Sin sincronizar');toast(authError(error))}
   }
   function authError(error){return error?.message||'No se pudo conectar con Supabase.'}
-  function localBackup(){try{if(!localStorage.getItem(BACKUP_KEY))localStorage.setItem(BACKUP_KEY,JSON.stringify(state))}catch(_){}}
-  function showLocalImportDialog(){if(!currentUser||!pendingLocalImport||backdrop.hidden===false)return;showModal('Encontré contenido guardado en este dispositivo','<p class="help-text">Esta copia local todavía no está en la wiki compartida. Puedes importarla ahora o conservarla solo en este navegador.</p><ul><li>'+pendingLocalImport.articles.length+' artículos</li><li>'+pendingLocalImport.folders.length+' carpetas</li><li>'+pendingLocalImport.comments.length+' comentarios</li></ul>','<button class="outline-button" data-action="use-cloud">Usar la wiki en la nube</button><button class="primary-button" data-action="import-local">Importar esta copia</button>')}
+  function localBackup(snapshot=state){try{localStorage.setItem(BACKUP_KEY,JSON.stringify(snapshot))}catch(_){}}
+  function readLocalBackup(){try{const value=JSON.parse(localStorage.getItem(BACKUP_KEY)||'null');return value&&Array.isArray(value.articles)?value:null}catch(_){return null}}
+  function showLocalImportDialog(){if(!currentUser||!pendingLocalImport||backdrop.hidden===false)return;showModal('Encontré cambios de este dispositivo','<p class="help-text">Hay contenido local que todavía no aparece en la wiki compartida. Puedes unirlo con la nube o continuar con la copia compartida.</p><ul><li>'+pendingLocalImport.articles.length+' artículos</li><li>'+pendingLocalImport.folders.length+' carpetas</li><li>'+pendingLocalImport.comments.length+' comentarios</li><li>'+pendingLocalImport.revisions.length+' revisiones</li></ul>','<button class="outline-button" data-action="use-cloud">Usar la wiki en la nube</button><button class="primary-button" data-action="import-local">Unir con la nube</button>')}
   function remoteDataEmpty(data){return !data.articles.length&&!data.folders.length&&!data.comments.length&&!data.revisions.length}
+  function localChangesAgainstCloud(local,data){
+    const remoteArticles=new Map(data.articles.map(a=>[a.id,a])),remoteFolders=new Map(data.folders.map(f=>[f.id,f])),remoteComments=new Set(data.comments.map(c=>c.id)),remoteRevisions=new Set(data.revisions.map(r=>r.id));
+    return {
+      articles:(local?.articles||[]).filter(a=>{const remote=remoteArticles.get(a.id);return !remote||(Date.parse(a.updated||'')||0)>(Date.parse(remote.updated||'')||0)}),
+      folders:(local?.folders||[]).filter(f=>{const remote=remoteFolders.get(f.id);return !remote||remote.name!==f.name||(remote.description||'')!==(f.description||'')}),
+      comments:(local?.comments||[]).filter(c=>!remoteComments.has(c.id)),
+      revisions:(local?.revisions||[]).filter(r=>!remoteRevisions.has(r.id))
+    }
+  }
+  function mergePendingSnapshots(...snapshots){
+    const result={articles:[],folders:[],comments:[],revisions:[]};
+    for(const key of Object.keys(result)){const items=new Map();for(const snapshot of snapshots)for(const item of snapshot?.[key]||[])items.set(item.id,item);result[key]=[...items.values()]}
+    return result
+  }
   let refreshSequence=0;
   async function refreshCloudData(){
     if(!supabase)return;const sequence=++refreshSequence,local=JSON.parse(JSON.stringify(state));setCloudStatus('Cargando…');
@@ -76,18 +91,16 @@
     const [articleResult,folderResult,commentResult,revisionResult]=results;
     const data={articles:(articleResult.data||[]).map(r=>({id:r.id,title:r.title,body:r.body_html||'',designId:r.design_id||'minimal',folderId:r.folder_id||'',createdBy:r.created_by||'',created:r.created_at,updated:r.updated_at})),folders:(folderResult.data||[]).map(r=>({id:r.id,name:r.name,description:r.description||'',createdBy:r.created_by||'',created:r.created_at})),comments:(commentResult.data||[]).map(r=>({id:r.id,articleId:r.article_id,authorId:r.author_id||'',author:r.author_name||'Preludiano/a',body:r.body,date:r.created_at})),revisions:(revisionResult.data||[]).map(r=>({id:r.id,articleId:r.article_id,editorId:r.editor_id||'',title:r.title,body:r.body_html||'',date:r.created_at}))};
     knownComments.clear();data.comments.forEach(c=>knownComments.add(c.id));knownRevisions.clear();data.revisions.forEach(r=>knownRevisions.add(r.id));
-    if(remoteDataEmpty(data)&&hasSharedContent(local)){
-      state=local;pendingLocalImport=JSON.parse(JSON.stringify(local));cloudWriteEnabled=false;
-    }else{
-      if(hasSharedContent(local)&&remoteDataEmpty(data)===false)localBackup();
-      state={...JSON.parse(JSON.stringify(initial)),design:local.design,reading:local.reading,...data};pendingLocalImport=null;cloudWriteEnabled=true;
-    }
+    const backup=readLocalBackup(),localChanges=localChangesAgainstCloud(local,data),backupChanges=localChangesAgainstCloud(backup,data),pending=mergePendingSnapshots(backupChanges,localChanges);
+    pendingLocalImport=hasSharedContent(pending)?pending:null;
+    if(pendingLocalImport&&hasSharedContent(local))localBackup(local);
+    state={...JSON.parse(JSON.stringify(initial)),design:local.design,reading:local.reading,...data};cloudWriteEnabled=true;
     cloudReady=true;save();render();updateAuthUI();if(currentUser&&pendingLocalImport)showLocalImportDialog()
   }
   function mapLegacyIds(){
     const articleIds=new Map(),folderIds=new Map(),fix=(value,map)=>{if(!value)return '';if(isUuid(value))return value;if(!map.has(value))map.set(value,id());return map.get(value)};
     state.articles.forEach(a=>{a.id=fix(a.id,articleIds)});state.folders.forEach(f=>{f.id=fix(f.id,folderIds)});
-    state.articles.forEach(a=>{a.folderId=folderIds.get(a.folderId)||'';a.createdBy=currentUser.id});
+    state.articles.forEach(a=>{a.folderId=folderIds.get(a.folderId)||(isUuid(a.folderId)?a.folderId:'');a.createdBy=currentUser.id});
     state.folders.forEach(f=>{f.createdBy=currentUser.id});state.comments.forEach(c=>{c.id=fix(c.id,new Map());c.articleId=articleIds.get(c.articleId)||c.articleId;c.authorId=currentUser.id});state.revisions.forEach(r=>{r.id=fix(r.id,new Map());r.articleId=articleIds.get(r.articleId)||r.articleId;r.editorId=currentUser.id})
   }
   async function uploadMediaFile(file){
@@ -107,29 +120,37 @@
     }
     return clean(root.innerHTML)
   }
-  async function syncCloudNow(){
+  async function syncCloudNow(changeSet=null){
     if(!supabase||!currentUser||!cloudWriteEnabled)return;
-    for(const item of [...state.articles,...state.revisions])if(/data:(image|video|audio)\//i.test(item.body||''))item.body=await externalizeInlineMedia(item.body);
+    const changed=(items,key)=>!changeSet?items:items.filter(item=>changeSet[key]?.has(item.id));
+    const articlesToSync=changed(state.articles,'articles'),revisionsToSync=changed(state.revisions,'revisions');
+    for(const item of [...articlesToSync,...revisionsToSync])if(/data:(image|video|audio)\//i.test(item.body||''))item.body=await externalizeInlineMedia(item.body);
     const now=new Date().toISOString();
-    const folders=state.folders.map(f=>({id:f.id,name:f.name,description:f.description||'',created_by:f.createdBy||currentUser.id,created_at:f.created||now}));
+    const folders=changed(state.folders,'folders').map(f=>({id:f.id,name:f.name,description:f.description||'',created_by:f.createdBy||currentUser.id,created_at:f.created||now}));
     if(folders.length){const {error}=await supabase.from('folders').upsert(folders,{onConflict:'id'});if(error)throw error}
-    const articles=state.articles.map(a=>({id:a.id,title:a.title,body_html:clean(a.body),design_id:a.designId||'minimal',folder_id:a.folderId||null,created_by:a.createdBy||currentUser.id,created_at:a.created||now,updated_at:a.updated||now}));
+    const articles=articlesToSync.map(a=>({id:a.id,title:a.title,body_html:clean(a.body),design_id:a.designId||'minimal',folder_id:a.folderId||null,created_by:a.createdBy||currentUser.id,created_at:a.created||now,updated_at:a.updated||now}));
     if(articles.length){const {error}=await supabase.from('articles').upsert(articles,{onConflict:'id'});if(error)throw error}
-    const comments=state.comments.filter(c=>!knownComments.has(c.id)).map(c=>({id:c.id,article_id:c.articleId,author_id:c.authorId||currentUser.id,author_name:c.author||'Preludiano/a',body:c.body,created_at:c.date||now}));
+    const comments=changed(state.comments,'comments').filter(c=>!knownComments.has(c.id)).map(c=>({id:c.id,article_id:c.articleId,author_id:c.authorId||currentUser.id,author_name:c.author||'Preludiano/a',body:c.body,created_at:c.date||now}));
     if(comments.length){const {error}=await supabase.from('comments').upsert(comments,{onConflict:'id',ignoreDuplicates:true});if(error)throw error;comments.forEach(c=>knownComments.add(c.id))}
-    const revisions=state.revisions.filter(r=>!knownRevisions.has(r.id)).map(r=>({id:r.id,article_id:r.articleId,editor_id:r.editorId||currentUser.id,title:r.title,body_html:clean(r.body),created_at:r.date||now}));
+    const revisions=revisionsToSync.filter(r=>!knownRevisions.has(r.id)).map(r=>({id:r.id,article_id:r.articleId,editor_id:r.editorId||currentUser.id,title:r.title,body_html:clean(r.body),created_at:r.date||now}));
     if(revisions.length){const {error}=await supabase.from('revisions').upsert(revisions,{onConflict:'id',ignoreDuplicates:true});if(error)throw error;revisions.forEach(r=>knownRevisions.add(r.id))}
     save();setCloudStatus('Guardado en la nube')
   }
-  function queueCloudSync(){
-    if(!supabase||!currentUser||!cloudReady||!cloudWriteEnabled)return;clearTimeout(syncTimer);setCloudStatus('Sincronizando…');
-    syncTimer=setTimeout(()=>{syncQueue=syncQueue.then(syncCloudNow).catch(error=>{setCloudStatus('Sin sincronizar');toast('El cambio quedó en este dispositivo, pero no se sincronizó: '+authError(error))})},350)
+  function queueCloudSync(changeSet){
+    if(!currentUser)return;
+    if(!supabase||!cloudReady||!cloudWriteEnabled){setCloudStatus('Pendiente de sincronizar');return}
+    setCloudStatus('Sincronizando…');
+    syncQueue=syncQueue.then(()=>syncCloudNow(changeSet)).catch(error=>{setCloudStatus('Sin sincronizar');toast('El cambio quedó en este dispositivo, pero no se sincronizó: '+authError(error))});
   }
   async function importLocalData(){
-    if(!requireEditor()||!pendingLocalImport)return;state=JSON.parse(JSON.stringify(pendingLocalImport));state.design=state.design||initial.design;state.reading=state.reading||initial.reading;mapLegacyIds();
-    try{for(const a of state.articles)a.body=await externalizeInlineMedia(a.body);cloudWriteEnabled=true;await syncCloudNow();pendingLocalImport=null;hideModal();save();render();toast('La copia local ya está en la wiki compartida.')}catch(error){cloudWriteEnabled=false;toast('No se pudo completar la importación: '+authError(error))}
+    if(!requireEditor()||!pendingLocalImport)return;
+    const cloud=JSON.parse(JSON.stringify(state));state=JSON.parse(JSON.stringify(pendingLocalImport));mapLegacyIds();const incoming=JSON.parse(JSON.stringify(state));
+    const mergeById=(current,updates)=>{const merged=new Map((current||[]).map(item=>[item.id,item]));(updates||[]).forEach(item=>merged.set(item.id,item));return [...merged.values()]};
+    state={...cloud,articles:mergeById(cloud.articles,incoming.articles),folders:mergeById(cloud.folders,incoming.folders),comments:mergeById(cloud.comments,incoming.comments),revisions:mergeById(cloud.revisions,incoming.revisions)};
+    const changeSet={articles:new Set(incoming.articles.map(a=>a.id)),folders:new Set(incoming.folders.map(f=>f.id)),comments:new Set(incoming.comments.map(c=>c.id)),revisions:new Set(incoming.revisions.map(r=>r.id))};
+    try{await syncCloudNow(changeSet);pendingLocalImport=null;try{localStorage.removeItem(BACKUP_KEY)}catch(_){}hideModal();save();render();toast('Los cambios locales ya están unidos con la wiki compartida.')}catch(error){toast('No se pudo completar la importación: '+authError(error))}
   }
-  function useCloudCopy(){localBackup();state={...JSON.parse(JSON.stringify(initial)),design:state.design,reading:state.reading};pendingLocalImport=null;cloudWriteEnabled=true;save();hideModal();render();setCloudStatus('Guardado en la nube')}
+  function useCloudCopy(){localBackup(state);state={...JSON.parse(JSON.stringify(initial)),design:state.design,reading:state.reading};pendingLocalImport=null;cloudWriteEnabled=true;save();hideModal();render();setCloudStatus('Guardado en la nube')}
   async function startSupabase(){
     if(!window.supabase?.createClient){setCloudStatus('Modo local');render();toast('No se cargó Supabase. Revisa tu conexión a internet.');return}
     supabase=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,storage:window.localStorage,autoRefreshToken:true,detectSessionInUrl:true}});
@@ -275,7 +296,7 @@
     if(!requireEditor())return;
     const title=document.getElementById('new-title')?.value.trim();if(!title){toast('Escribe el título del artículo.');return}
     if(state.articles.some(a=>a.title.toLowerCase()===title.toLowerCase())){toast('Ya existe un artículo con ese título.');return}
-    const a={id:id(),title,body:'',designId:selectedDesign,folderId:document.getElementById('new-folder')?.value||'',createdBy:currentUser?.id||'',created:new Date().toISOString(),updated:new Date().toISOString()};state.articles.unshift(a);save();queueCloudSync();hideModal();edit(a.id)
+    const a={id:id(),title,body:'',designId:selectedDesign,folderId:document.getElementById('new-folder')?.value||'',createdBy:currentUser?.id||'',created:new Date().toISOString(),updated:new Date().toISOString()};state.articles.unshift(a);save();queueCloudSync({articles:new Set([a.id])});hideModal();edit(a.id)
   }
   function folderDialog(folder=null){
     if(!requireEditor())return;
@@ -288,8 +309,8 @@
     const description=document.getElementById('folder-description')?.value.trim()||'';
     const existing=state.folders.find(f=>f.id===folderIdValue);
     if(state.folders.some(f=>f.id!==folderIdValue&&f.name.toLowerCase()===name.toLowerCase())){toast('Ya existe una carpeta con ese nombre.');return}
-    if(existing){existing.name=name;existing.description=description}else state.folders.push({id:id(),name,description,createdBy:currentUser?.id||'',created:new Date().toISOString()});
-    save();queueCloudSync();hideModal();render();toast(existing?'Carpeta actualizada.':'Carpeta creada.')
+    const folder=existing||{id:id(),name,description,createdBy:currentUser?.id||'',created:new Date().toISOString()};if(existing){existing.name=name;existing.description=description}else state.folders.push(folder);
+    save();queueCloudSync({folders:new Set([folder.id])});hideModal();render();toast(existing?'Carpeta actualizada.':'Carpeta creada.')
   }
   function edit(idValue){
     if(!requireEditor())return;
@@ -385,11 +406,11 @@
     if(!requireEditor())return;
     const a=state.articles.find(x=>x.id===editorId),title=document.getElementById('editor-title')?.value.trim();if(!a)return;
     if(!title){toast('Escribe un título.');return}if(state.articles.some(x=>x.id!==a.id&&x.title.toLowerCase()===title.toLowerCase())){toast('Ya existe un artículo con ese título.');return}
-    if(a.body!==clean(editor()?.innerHTML||'')||a.title!==title){state.revisions.unshift({id:id(),articleId:a.id,title:a.title,body:a.body,date:new Date().toISOString()});state.revisions=state.revisions.slice(0,50)}
-    a.title=title;a.body=clean(editor()?.innerHTML||'');a.updated=new Date().toISOString();save();queueCloudSync();hideModal();articleId=a.id;articleTab='article';page='article';render();toast('Artículo guardado; sincronizando…')
+    let revision=null;if(a.body!==clean(editor()?.innerHTML||'')||a.title!==title){revision={id:id(),articleId:a.id,title:a.title,body:a.body,date:new Date().toISOString()};state.revisions.unshift(revision);state.revisions=state.revisions.slice(0,50)}
+    a.title=title;a.body=clean(editor()?.innerHTML||'');a.updated=new Date().toISOString();save();queueCloudSync({articles:new Set([a.id]),revisions:new Set(revision?[revision.id]:[])});hideModal();articleId=a.id;articleTab='article';page='article';render();toast('Artículo guardado; sincronizando…')
   }
-  function saveComment(targetId){if(!requireEditor())return;const author=document.getElementById('comment-author')?.value.trim()||'Preludiano/a',body=document.getElementById('comment-body')?.value.trim();if(!body){toast('Escribe un comentario antes de publicarlo.');return}state.comments.unshift({id:id(),articleId:targetId,authorId:currentUser.id,author,body,date:new Date().toISOString()});save();queueCloudSync();articleTab='discussion';render();toast('Comentario publicado; sincronizando…')}
-  function restoreRevision(revisionId){if(!requireEditor())return;const r=state.revisions.find(x=>x.id===revisionId),a=state.articles.find(x=>x.id===r?.articleId);if(!r||!a)return;state.revisions.unshift({id:id(),articleId:a.id,editorId:currentUser.id,title:a.title,body:a.body,date:new Date().toISOString()});a.title=r.title;a.body=r.body;a.updated=new Date().toISOString();save();queueCloudSync();articleTab='article';render();toast('Se restauró esa versión; sincronizando…')}
+  function saveComment(targetId){if(!requireEditor())return;const author=document.getElementById('comment-author')?.value.trim()||'Preludiano/a',body=document.getElementById('comment-body')?.value.trim();if(!body){toast('Escribe un comentario antes de publicarlo.');return}const comment={id:id(),articleId:targetId,authorId:currentUser.id,author,body,date:new Date().toISOString()};state.comments.unshift(comment);save();queueCloudSync({comments:new Set([comment.id])});articleTab='discussion';render();toast('Comentario publicado; sincronizando…')}
+  function restoreRevision(revisionId){if(!requireEditor())return;const r=state.revisions.find(x=>x.id===revisionId),a=state.articles.find(x=>x.id===r?.articleId);if(!r||!a)return;const revision={id:id(),articleId:a.id,editorId:currentUser.id,title:a.title,body:a.body,date:new Date().toISOString()};state.revisions.unshift(revision);a.title=r.title;a.body=r.body;a.updated=new Date().toISOString();save();queueCloudSync({articles:new Set([a.id]),revisions:new Set([revision.id])});articleTab='article';render();toast('Se restauró esa versión; sincronizando…')}
   function enterPresent(idValue){articleId=idValue;slideIndex=0;page='present';render();document.getElementById('presentation-view')?.requestFullscreen?.().catch(()=>{})}
   function leavePresent(){if(document.fullscreenElement)document.exitFullscreen?.().catch?.(()=>{});page='article';render()}
   function moveSlide(d){const a=state.articles.find(x=>x.id===articleId);if(!a)return;slideIndex=Math.max(0,Math.min(slides(a).length-1,slideIndex+d));render()}
@@ -481,4 +502,3 @@
   window.addEventListener('beforeunload',()=>{cameraStream?.getTracks().forEach(t=>t.stop());audioStream?.getTracks().forEach(t=>t.stop());recognition?.stop?.()});
   design();render();startSupabase().catch(error=>{cloudReady=false;cloudWriteEnabled=false;setCloudStatus('Sin sincronizar');updateAuthUI();toast('No se pudo iniciar la conexión con Supabase: '+authError(error))});
 })();
-
