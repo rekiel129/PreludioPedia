@@ -131,6 +131,13 @@
   }
   function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
   function logoMarkup(className='breadcrumb-logo',alt='PreludioPedia'){return `<img class="${className}" src="assets/preludiopedia-logo-transparent.webp" alt="${esc(alt)}" decoding="async">`}
+  function applyButtonPalette(){
+    const colors=['blue','green','orange','pink'];let index=0;
+    document.querySelectorAll('.primary-button,.outline-button,.soft-button').forEach(button=>{
+      if(!button.getClientRects().length){button.removeAttribute('data-palette');return}
+      button.dataset.palette=colors[index++%colors.length]
+    })
+  }
   function linkUrl(v){v=String(v||'').trim();return /^(https?:|mailto:|tel:|#|\/)/i.test(v)&&!/^\/\//.test(v)?v:''}
   function mediaUrl(v){v=String(v||'').trim();return /^https?:\/\//i.test(v)||/^data:(image|video|audio)\/[\w.+-]+;base64,/i.test(v)?v:''}
   function clean(html){
@@ -230,21 +237,22 @@
   function render(){
     design();count();folderNav();
     document.querySelectorAll('.nav-item[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page||(page==='article'&&b.dataset.page==='articles')));
-    if(page==='present'){view.innerHTML=presentation();typeset(document.getElementById('presentation-view'));return}
+    if(page==='present'){view.innerHTML=presentation();typeset(document.getElementById('presentation-view'));applyButtonPalette();return}
     if(page==='articles')view.innerHTML=articles();
     else if(page==='folder')view.innerHTML=folderPage(activeFolderId);
     else if(page==='article'){const a=state.articles.find(x=>x.id===articleId);view.innerHTML=a?articleView(a):home();typeset(document.getElementById('article-content'))}
     else view.innerHTML=home()
+    applyButtonPalette()
   }
   function typeset(el){if(el&&window.MathJax?.typesetPromise)window.MathJax.typesetPromise([el]).catch(()=>{})}
   function showModal(title,html,buttons='',compact=false,extra=''){
-    document.getElementById('modal-title').textContent=title;document.getElementById('modal-eyebrow').innerHTML=logoMarkup('eyebrow-logo','PreludioPedia');content.innerHTML=html;footer.innerHTML=buttons;modal.className='modal'+(compact?' compact':'')+(extra?' '+extra:'');backdrop.hidden=false;
+    document.getElementById('modal-title').textContent=title;document.getElementById('modal-eyebrow').innerHTML=logoMarkup('eyebrow-logo','PreludioPedia');content.innerHTML=html;footer.innerHTML=buttons;modal.className='modal'+(compact?' compact':'')+(extra?' '+extra:'');backdrop.hidden=false;applyButtonPalette();
     const first=content.querySelector('input:not([type=file]),textarea,select');if(first)setTimeout(()=>first.focus(),25)
   }
   function hideModal(){hideAux();stopCamera(true);if(audioRecorder?.state==='recording')audioRecorder.stop();recognition?.stop?.();recognition=null;backdrop.hidden=true;modal.className='modal'}
   function showAux(title,html,buttons){
     const host=document.getElementById('editor-aux');if(!host)return;
-    document.getElementById('aux-title').textContent=title;document.getElementById('aux-content').innerHTML=html;document.getElementById('aux-footer').innerHTML=buttons;host.hidden=false;
+    document.getElementById('aux-title').textContent=title;document.getElementById('aux-content').innerHTML=html;document.getElementById('aux-footer').innerHTML=buttons;host.hidden=false;applyButtonPalette();
     host.querySelector('input,textarea,select')?.focus()
   }
   function hideAux(){const a=document.getElementById('editor-aux');if(a)a.hidden=true}
@@ -441,8 +449,8 @@
     if(e.target.id==='highlight-color'){focusEditor();document.execCommand('styleWithCSS',false,true);document.execCommand('hiliteColor',false,e.target.value)}
   });
   document.addEventListener('input',e=>{
-    if(e.target.id==='article-filter'){const wrap=document.getElementById('article-results');if(wrap)wrap.innerHTML=articleResults(e.target.value)}
-    if(e.target.id==='folder-filter'){const wrap=document.getElementById('folder-results');if(wrap)wrap.innerHTML=articleResults(e.target.value,activeFolderId)}
+    if(e.target.id==='article-filter'){const wrap=document.getElementById('article-results');if(wrap)wrap.innerHTML=articleResults(e.target.value);applyButtonPalette()}
+    if(e.target.id==='folder-filter'){const wrap=document.getElementById('folder-results');if(wrap)wrap.innerHTML=articleResults(e.target.value,activeFolderId);applyButtonPalette()}
     if(e.target.id==='design-overlay')updateWallpaperPreview();
     if(e.target.id==='editor-canvas')wordCount()
   });
