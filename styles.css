@@ -156,3 +156,9 @@ button,.article-tile,.folder-card,.nav-item{transition:color .18s ease,backgroun
 :root[data-theme="dark"] .brand-logo,:root[data-theme="dark"] .sidebar-logo,:root[data-theme="dark"] .eyebrow-logo,:root[data-theme="dark"] .breadcrumb-logo,:root[data-theme="dark"] .section-logo-img,:root[data-theme="dark"] .hero-logo{filter:drop-shadow(0 0 1px rgba(247,250,252,.78)) drop-shadow(0 2px 2px rgba(0,0,0,.36))}
 
 
+
+button[data-palette]:not(.primary-button):not(.outline-button):not(.soft-button){border-color:color-mix(in srgb,var(--palette-ink) 35%,var(--line));background:var(--palette-soft);color:var(--palette-ink);transition:background-color .16s,border-color .16s,color .16s,transform .16s}
+button[data-palette]:not(.primary-button):not(.outline-button):not(.soft-button):hover{border-color:var(--palette-ink);background:color-mix(in srgb,var(--palette-ink) 15%,var(--surface));color:var(--palette-ink);transform:translateY(-1px)}
+button[data-palette].quick-link{border-bottom-color:color-mix(in srgb,var(--palette-ink) 24%,var(--line))}
+button[data-palette].article-tile{background:color-mix(in srgb,var(--palette-color) 5%,var(--surface))}
+button[data-palette]:disabled{opacity:.55;cursor:not-allowed;transform:none}
