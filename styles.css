@@ -18,9 +18,22 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 #auth-button{white-space:nowrap}
 .icon-button{width:35px;height:35px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px}.icon-button:hover{background:var(--surface-soft);color:var(--ink)}
 .primary-button,.outline-button,.soft-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:10px 13px;border-radius:8px;font-size:11px;font-weight:700;transition:.15s}
+[data-palette="blue"]{--palette-color:#075e78;--palette-soft:#e8f3f6;--palette-ink:#075e78}
+[data-palette="green"]{--palette-color:#087457;--palette-soft:#e9f4ef;--palette-ink:#087457}
+[data-palette="orange"]{--palette-color:#a54b14;--palette-soft:#fbefe5;--palette-ink:#93400f}
+[data-palette="pink"]{--palette-color:#9a3658;--palette-soft:#f8eaf0;--palette-ink:#8c2d4e}
+:root[data-theme="dark"] [data-palette="blue"]{--palette-ink:#68c3dc;--palette-soft:#183641}
+:root[data-theme="dark"] [data-palette="green"]{--palette-ink:#64c49c;--palette-soft:#19382f}
+:root[data-theme="dark"] [data-palette="orange"]{--palette-ink:#f2a36e;--palette-soft:#422d22}
+:root[data-theme="dark"] [data-palette="pink"]{--palette-ink:#ed8caf;--palette-soft:#412633}
 .primary-button{border:1px solid var(--accent);background:var(--accent);color:#fff}.primary-button:hover{filter:brightness(1.06);transform:translateY(-1px)}
+.primary-button[data-palette]{border-color:var(--palette-color);background:var(--palette-color);color:#fff}
 .outline-button{border:1px solid var(--line);background:var(--surface);color:var(--ink)}.outline-button:hover{border-color:var(--accent);color:var(--accent)}
+.outline-button[data-palette]{border-color:color-mix(in srgb,var(--palette-ink) 45%,var(--line));background:color-mix(in srgb,var(--palette-color) 6%,var(--surface));color:var(--palette-ink)}
+.outline-button[data-palette]:hover{border-color:var(--palette-ink);background:color-mix(in srgb,var(--palette-color) 11%,var(--surface));color:var(--palette-ink)}
 .soft-button{border:1px solid transparent;background:var(--accent-soft);color:var(--accent)}
+.soft-button[data-palette]{border-color:color-mix(in srgb,var(--palette-ink) 18%,transparent);background:var(--palette-soft);color:var(--palette-ink)}
+.soft-button[data-palette]:hover{filter:brightness(.96)}
 .primary-button.small{padding:9px 11px;font-size:10px}
 .mobile-menu{display:none}
 .layout{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:calc(100vh - 68px)}
