@@ -2,7 +2,7 @@
 
 Wiki escolar adaptable con el subtítulo **La Wiki de todos los preludianos**. La lectura es pública; para crear o editar contenido se necesita una cuenta de Supabase.
 
-El logotipo de la wiki se guarda en `assets/preludiopedia-logo.webp` y se muestra en la cabecera, la portada, las rutas de navegación y los cuadros de diálogo.
+El logotipo transparente de la wiki se guarda en `assets/preludiopedia-logo-transparent.webp` y se muestra en la cabecera, la portada, las rutas de navegación y los cuadros de diálogo.
 
 ## Funciones
 
