@@ -247,7 +247,8 @@
     const designId=designDefs.some(d=>d.id===a.designId)?a.designId:'minimal';
     const current=articleTab==='discussion'?discussion(a):articleTab==='history'?historyPanel(a):`<div class="article-layout"><article class="wiki-card article-design article-design-${designId}"><div class="wiki-content" id="article-content">${empty?'<div class="article-empty"><p>Este artículo está en blanco.</p><button class="primary-button" data-action="edit" data-id="'+esc(a.id)+'">Empezar a escribir</button></div>':content.html}</div></article><aside class="article-index"><strong>Índice</strong>${content.headings.length?`<ol>${content.headings.map(h=>`<li class="level-${h.level}"><a href="#${h.id}">${esc(h.text)}</a></li>`).join('')}</ol>`:`<p>Añade encabezados desde el editor para generar un índice automático.</p>`}</aside></div>`;
     const categoryCrumb=a.folderId?`<button class="link-button" data-open-folder="${esc(a.folderId)}">${esc(folderName(a.folderId))}</button>`:`<button class="link-button" data-page="articles">Sin carpeta</button>`;
-    return `<div class="page-wrap"><div class="breadcrumb"><button class="link-button brand-breadcrumb" data-page="home" aria-label="Inicio">${logoMarkup('breadcrumb-logo','')}</button><span>/</span>${categoryCrumb}<span>/</span><span>${esc(a.title)}</span></div><header class="article-header"><div><div class="eyebrow">${esc(folderName(a.folderId))}</div><h1>${esc(a.title)}</h1><div class="article-meta">Actualizado ${new Date(a.updated).toLocaleString('es-CO')}</div></div><div class="article-actions"><button class="outline-button" data-action="present" data-id="${esc(a.id)}">▷ Presentar</button><button class="primary-button" data-action="edit" data-id="${esc(a.id)}">✎ Editar</button></div></header><nav class="article-tabs" aria-label="Pestañas del artículo"><button class="article-tab ${articleTab==='article'?'active':''}" data-action="article-tab" data-tab="article">Artículo</button><button class="article-tab ${articleTab==='discussion'?'active':''}" data-action="article-tab" data-tab="discussion">Discusión <span>${state.comments.filter(c=>c.articleId===a.id).length}</span></button><button class="article-tab ${articleTab==='history'?'active':''}" data-action="article-tab" data-tab="history">Historial</button></nav>${current}</div>`
+    const deleteButton=currentUser&&a.createdBy===currentUser.id?`<button class="danger-button" data-action="delete-article" data-id="${esc(a.id)}" title="Borrar artículo">⌫ Borrar</button>`:'';
+    return `<div class="page-wrap"><div class="breadcrumb"><button class="link-button brand-breadcrumb" data-page="home" aria-label="Inicio">${logoMarkup('breadcrumb-logo','')}</button><span>/</span>${categoryCrumb}<span>/</span><span>${esc(a.title)}</span></div><header class="article-header"><div><div class="eyebrow">${esc(folderName(a.folderId))}</div><h1>${esc(a.title)}</h1><div class="article-meta">Actualizado ${new Date(a.updated).toLocaleString('es-CO')}</div></div><div class="article-actions"><button class="outline-button" data-action="present" data-id="${esc(a.id)}">▷ Presentar</button><button class="primary-button" data-action="edit" data-id="${esc(a.id)}">✎ Editar</button>${deleteButton}</div></header><nav class="article-tabs" aria-label="Pestañas del artículo"><button class="article-tab ${articleTab==='article'?'active':''}" data-action="article-tab" data-tab="article">Artículo</button><button class="article-tab ${articleTab==='discussion'?'active':''}" data-action="article-tab" data-tab="discussion">Discusión <span>${state.comments.filter(c=>c.articleId===a.id).length}</span></button><button class="article-tab ${articleTab==='history'?'active':''}" data-action="article-tab" data-tab="history">Historial</button></nav>${current}</div>`
   }
   function slides(a){
     const root=document.createElement('div');root.innerHTML=clean(a.body);
@@ -409,6 +410,29 @@
     let revision=null;if(a.body!==clean(editor()?.innerHTML||'')||a.title!==title){revision={id:id(),articleId:a.id,title:a.title,body:a.body,date:new Date().toISOString()};state.revisions.unshift(revision);state.revisions=state.revisions.slice(0,50)}
     a.title=title;a.body=clean(editor()?.innerHTML||'');a.updated=new Date().toISOString();save();queueCloudSync({articles:new Set([a.id]),revisions:new Set(revision?[revision.id]:[])});hideModal();articleId=a.id;articleTab='article';page='article';render();toast('Artículo guardado; sincronizando…')
   }
+  function deleteArticle(idValue){
+    if(!requireEditor())return;
+    const a=state.articles.find(x=>x.id===idValue);if(!a)return;
+    if(a.createdBy!==currentUser.id){toast('Solo quien creó el artículo puede borrarlo.');return}
+    showModal('Borrar artículo','<p>¿Quieres borrar <strong>'+esc(a.title)+'</strong>?</p><p class="help-text">Esta acción quitará el artículo de la wiki y no se puede deshacer desde la página.</p>','<button class="outline-button" data-action="close">Cancelar</button><button class="danger-button" data-action="confirm-delete-article" data-id="'+esc(a.id)+'">Borrar definitivamente</button>',true)
+  }
+  async function confirmDeleteArticle(idValue){
+    if(!requireEditor())return;
+    const a=state.articles.find(x=>x.id===idValue);if(!a)return;
+    if(a.createdBy!==currentUser.id){toast('Solo quien creó el artículo puede borrarlo.');hideModal();return}
+    if(!supabase||!cloudReady){toast('No se puede borrar mientras la nube esté desconectada.');return}
+    setCloudStatus('Esperando cambios pendientes…');
+    try{
+      await syncQueue;
+      if(!cloudReady)throw new Error('La nube se desconectó antes de completar el borrado.');
+      setCloudStatus('Borrando artículo…');
+      const {data,error}=await supabase.from('articles').delete().eq('id',a.id).eq('created_by',currentUser.id).select('id');
+      if(error)throw error;
+      if(!data?.length)throw new Error('Supabase no autorizó el borrado. Comprueba que seas el autor y que esté activa la política DELETE.');
+      state.articles=state.articles.filter(item=>item.id!==a.id);state.comments=state.comments.filter(item=>item.articleId!==a.id);state.revisions=state.revisions.filter(item=>item.articleId!==a.id);
+      save();hideModal();articleId='';page='articles';render();setCloudStatus('Guardado en la nube');toast('Artículo borrado.')
+    }catch(error){setCloudStatus('Sin sincronizar');toast('No se pudo borrar el artículo: '+authError(error))}
+  }
   function saveComment(targetId){if(!requireEditor())return;const author=document.getElementById('comment-author')?.value.trim()||'Preludiano/a',body=document.getElementById('comment-body')?.value.trim();if(!body){toast('Escribe un comentario antes de publicarlo.');return}const comment={id:id(),articleId:targetId,authorId:currentUser.id,author,body,date:new Date().toISOString()};state.comments.unshift(comment);save();queueCloudSync({comments:new Set([comment.id])});articleTab='discussion';render();toast('Comentario publicado; sincronizando…')}
   function restoreRevision(revisionId){if(!requireEditor())return;const r=state.revisions.find(x=>x.id===revisionId),a=state.articles.find(x=>x.id===r?.articleId);if(!r||!a)return;const revision={id:id(),articleId:a.id,editorId:currentUser.id,title:a.title,body:a.body,date:new Date().toISOString()};state.revisions.unshift(revision);a.title=r.title;a.body=r.body;a.updated=new Date().toISOString();save();queueCloudSync({articles:new Set([a.id]),revisions:new Set([revision.id])});articleTab='article';render();toast('Se restauró esa versión; sincronizando…')}
   function enterPresent(idValue){articleId=idValue;slideIndex=0;page='present';render();document.getElementById('presentation-view')?.requestFullscreen?.().catch(()=>{})}
@@ -447,6 +471,8 @@
       case 'restore-revision':restoreRevision(b.dataset.id);break;
       case 'edit':edit(b.dataset.id);break;
       case 'save-article':saveArticle();break;
+      case 'delete-article':deleteArticle(b.dataset.id);break;
+      case 'confirm-delete-article':confirmDeleteArticle(b.dataset.id);break;
       case 'customize':customize();break;
       case 'save-design':saveDesign();break;
       case 'clear-wallpaper':pendingWallpaper='';updateWallpaperPreview();break;
