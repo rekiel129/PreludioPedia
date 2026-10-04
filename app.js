@@ -42,8 +42,8 @@
   function updateAuthUI(){const b=document.getElementById('auth-button');if(b){b.textContent=currentUser?(currentUser.email?.split('@')[0]||'Mi cuenta'):'Iniciar sesión';b.title=currentUser?'Cuenta y cierre de sesión':'Inicia sesión para editar y colaborar'}setCloudStatus(currentUser?(cloudReady?'Guardado en la nube':'Conectando nube…'):'Lectura pública · inicia sesión para editar')}
   function requireEditor(){if(currentUser)return true;toast('Inicia sesión para crear y editar en la wiki.');authDialog();return false}
   function authDialog(){
-    if(currentUser){showModal('Tu cuenta','<p class="help-text">Sesión iniciada como</p><p><strong>'+esc(currentUser.email||'Usuario')+'</strong></p><p class="help-text">Tus artículos y cambios se guardan en la nube.</p>','<button class="outline-button" data-action="close">Cerrar</button><button class="primary-button" data-action="sign-out">Cerrar sesión</button>',true);return}
-    showModal('Participar en la wiki','<p class="help-text">La lectura es pública. Inicia sesión o crea una cuenta para escribir, comentar y guardar cambios compartidos.</p><label class="form-label" for="auth-email">Correo electrónico</label><input class="form-input" id="auth-email" type="email" autocomplete="email" placeholder="tu@colegio.edu"><label class="form-label" for="auth-password">Contraseña</label><input class="form-input" id="auth-password" type="password" autocomplete="current-password" placeholder="Al menos 6 caracteres">','<button class="outline-button" data-action="close">Cancelar</button><button class="outline-button" data-action="sign-up">Crear cuenta</button><button class="primary-button" data-action="sign-in">Iniciar sesión</button>',true)
+    if(currentUser){showModal('Tu cuenta','<p class="help-text">Sesión iniciada como</p><p><strong>'+esc(currentUser.email||'Usuario')+'</strong></p><p class="help-text">Tus artículos y cambios se guardan en la nube. Este navegador recordará tu sesión; cerrar sesión aquí no desconecta tus otros dispositivos.</p>','<button class="outline-button" data-action="close">Cerrar</button><button class="primary-button" data-action="sign-out">Cerrar sesión</button>',true);return}
+    showModal('Participar en la wiki','<p class="help-text">La lectura es pública. Inicia sesión o crea una cuenta para escribir, comentar y guardar cambios compartidos.</p><p class="help-text">Después de iniciar sesión, este navegador recordará tu sesión. Cada navegador o dispositivo requiere iniciar sesión una vez.</p><label class="form-label" for="auth-email">Correo electrónico</label><input class="form-input" id="auth-email" type="email" autocomplete="email" placeholder="tu@colegio.edu"><label class="form-label" for="auth-password">Contraseña</label><input class="form-input" id="auth-password" type="password" autocomplete="current-password" placeholder="Al menos 6 caracteres">','<button class="outline-button" data-action="close">Cancelar</button><button class="outline-button" data-action="sign-up">Crear cuenta</button><button class="primary-button" data-action="sign-in">Iniciar sesión</button>',true)
   }
   async function performAuth(mode){
     if(!supabase){toast('Supabase todavía no está listo. Recarga la página e inténtalo de nuevo.');return}
@@ -124,7 +124,7 @@
   function useCloudCopy(){localBackup();state={...JSON.parse(JSON.stringify(initial)),design:state.design,reading:state.reading};pendingLocalImport=null;cloudWriteEnabled=true;save();hideModal();render();setCloudStatus('Guardado en la nube')}
   async function startSupabase(){
     if(!window.supabase?.createClient){setCloudStatus('Modo local');render();toast('No se cargó Supabase. Revisa tu conexión a internet.');return}
-    supabase=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+    supabase=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,storage:window.localStorage,autoRefreshToken:true,detectSessionInUrl:true}});
     const {data,error}=await supabase.auth.getSession();if(error)throw error;currentUser=data.session?.user||null;updateAuthUI();
     supabase.auth.onAuthStateChange((_event,session)=>{currentUser=session?.user||null;updateAuthUI();setTimeout(()=>refreshCloudData(),0)});
     await refreshCloudData()
@@ -400,7 +400,7 @@
       case 'auth':authDialog();break;
       case 'sign-in':performAuth('sign-in');break;
       case 'sign-up':performAuth('sign-up');break;
-      case 'sign-out':supabase.auth.signOut().then(({error})=>{if(error)toast(authError(error));else{currentUser=null;hideModal();refreshCloudData()}});break;
+      case 'sign-out':supabase.auth.signOut({scope:'local'}).then(({error})=>{if(error)toast(authError(error));else{currentUser=null;hideModal();refreshCloudData()}});break;
       case 'import-local':importLocalData();break;
       case 'use-cloud':useCloudCopy();break;
       case 'create':createDialog(b.dataset.folder||(page==='folder'?activeFolderId:''));break;
