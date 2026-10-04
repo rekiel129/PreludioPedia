@@ -213,3 +213,9 @@ button[data-palette]:active{transform:translateY(1px) scale(.985);box-shadow:0 1
 :root[data-theme="dark"] .editor-toolbar{box-shadow:0 9px 24px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.06)}
 @keyframes pascal-breathe{0%,100%{transform:scale(.94);opacity:.72}50%{transform:scale(1.06);opacity:1}}
 @media(max-width:640px){.hero{border-radius:20px;padding:28px 24px}.hero:after{right:-205px;opacity:.7}.topbar{gap:12px;padding-inline:14px}.content-grid{gap:16px}.wiki-card{border-radius:15px}}
+
+.google-signin{display:flex;width:100%;align-items:center;justify-content:center;gap:10px;margin:16px 0 10px;padding:11px 14px;border:1px solid var(--line);border-radius:11px;background:var(--surface);color:var(--ink);font-weight:700;transition:transform .18s,box-shadow .18s,border-color .18s}
+.google-signin:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--accent) 45%,var(--line));box-shadow:0 7px 18px rgba(33,49,92,.1)}
+.google-mark{font:bold 20px Arial,sans-serif;background:conic-gradient(from -45deg,#4285f4 0 25%,#34a853 25% 45%,#fbbc05 45% 65%,#ea4335 65% 85%,#4285f4 85%);background-clip:text;-webkit-background-clip:text;color:transparent}
+.auth-divider{display:flex;align-items:center;gap:11px;margin:5px 0 12px;color:var(--muted);font-size:9px}
+.auth-divider:before,.auth-divider:after{height:1px;flex:1;content:"";background:var(--line)}
