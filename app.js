@@ -133,7 +133,7 @@
   function logoMarkup(className='breadcrumb-logo',alt='PreludioPedia'){return `<img class="${className}" src="assets/preludiopedia-logo-transparent.webp" alt="${esc(alt)}" decoding="async">`}
   function applyButtonPalette(){
     const colors=['blue','green','orange','pink'];let index=0;
-    document.querySelectorAll('.primary-button,.outline-button,.soft-button').forEach(button=>{
+    document.querySelectorAll('button').forEach(button=>{
       if(!button.getClientRects().length){button.removeAttribute('data-palette');return}
       button.dataset.palette=colors[index++%colors.length]
     })
@@ -435,7 +435,7 @@
       case 'align-left':alignMedia('left');break;case 'align-center':alignMedia('center');break;case 'align-right':alignMedia('right');break;
       case 'voice':voice();break;case 'record-audio':startAudio();break;case 'camera':openCamera();break;case 'start-camera':startCamera();break;case 'stop-camera':stopCamera(false);break;case 'close-camera':stopCamera(true);break;
       case 'fullscreen-editor':if(document.fullscreenElement)document.exitFullscreen?.();else modal.requestFullscreen?.().catch(()=>toast('No se pudo activar pantalla completa.'));break;
-      case 'more':{const m=document.getElementById('more-menu');m.hidden=!m.hidden;b.setAttribute('aria-expanded',String(!m.hidden));break}
+      case 'more':{const m=document.getElementById('more-menu');m.hidden=!m.hidden;b.setAttribute('aria-expanded',String(!m.hidden));applyButtonPalette();break}
       case 'present':enterPresent(b.dataset.id);break;case 'exit-present':leavePresent();break;case 'next':moveSlide(1);break;case 'prev':moveSlide(-1);break;
       case 'present-fullscreen':{const v=document.getElementById('presentation-view');if(document.fullscreenElement)document.exitFullscreen?.();else v?.requestFullscreen?.().catch(()=>{});break}
     }
@@ -461,7 +461,7 @@
     const html=e.clipboardData?.getData('text/html');if(html){e.preventDefault();insert(clean(html))}else{const text=e.clipboardData?.getData('text/plain');if(text){e.preventDefault();insertText(text)}}
   });
   document.addEventListener('click',e=>{const m=e.target.closest('#editor-canvas img,#editor-canvas video,#editor-canvas audio');if(m)pickedMedia=m;if(!e.target.closest('.more-wrap')){const menu=document.getElementById('more-menu');if(menu)menu.hidden=true}});
-  document.getElementById('search').addEventListener('input',e=>{const q=e.target.value.trim().toLowerCase(),box=document.getElementById('search-results');if(!q){box.hidden=true;return}const found=state.articles.filter(a=>a.title.toLowerCase().includes(q)).slice(0,7);box.innerHTML=found.length?found.map(a=>`<button class="search-result" data-open="${esc(a.id)}">${esc(a.title)}</button>`).join(''):'<div class="search-result">No hay artículos con ese título.</div>';box.hidden=false});
+  document.getElementById('search').addEventListener('input',e=>{const q=e.target.value.trim().toLowerCase(),box=document.getElementById('search-results');if(!q){box.hidden=true;return}const found=state.articles.filter(a=>a.title.toLowerCase().includes(q)).slice(0,7);box.innerHTML=found.length?found.map(a=>`<button class="search-result" data-open="${esc(a.id)}">${esc(a.title)}</button>`).join(''):'<div class="search-result">No hay artículos con ese título.</div>';box.hidden=false;applyButtonPalette()});
   document.getElementById('search').addEventListener('keydown',e=>{if(e.key==='Escape')document.getElementById('search-results').hidden=true;if(e.key==='Enter')document.querySelector('#search-results [data-open]')?.click()});
   document.getElementById('theme-toggle').addEventListener('click',()=>{state.design.theme=state.design.theme==='dark'?'light':'dark';save();design()});
   document.getElementById('menu-toggle').addEventListener('click',()=>document.getElementById('sidebar').classList.toggle('open'));
