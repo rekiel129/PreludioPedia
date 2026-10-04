@@ -43,7 +43,7 @@
   function requireEditor(){if(currentUser)return true;toast('Inicia sesión para crear y editar en la wiki.');authDialog();return false}
   function authDialog(){
     if(currentUser){showModal('Tu cuenta','<p class="help-text">Sesión iniciada como</p><p><strong>'+esc(currentUser.email||'Usuario')+'</strong></p><p class="help-text">Tus artículos y cambios se guardan en la nube. Este navegador recordará tu sesión; cerrar sesión aquí no desconecta tus otros dispositivos.</p>','<button class="outline-button" data-action="close">Cerrar</button><button class="primary-button" data-action="sign-out">Cerrar sesión</button>',true);return}
-    showModal('Participar en la wiki','<p class="help-text">La lectura es pública. Inicia sesión o crea una cuenta para escribir, comentar y guardar cambios compartidos.</p><p class="help-text">Después de iniciar sesión, este navegador recordará tu sesión. Cada navegador o dispositivo requiere iniciar sesión una vez.</p><label class="form-label" for="auth-email">Correo electrónico</label><input class="form-input" id="auth-email" type="email" autocomplete="email" placeholder="tu@colegio.edu"><label class="form-label" for="auth-password">Contraseña</label><input class="form-input" id="auth-password" type="password" autocomplete="current-password" placeholder="Al menos 6 caracteres">','<button class="outline-button" data-action="close">Cancelar</button><button class="outline-button" data-action="sign-up">Crear cuenta</button><button class="primary-button" data-action="sign-in">Iniciar sesión</button>',true)
+    showModal('Participar en la wiki','<p class="help-text">La lectura es pública. Inicia sesión o crea una cuenta para escribir, comentar y guardar cambios compartidos.</p><p class="help-text">Después de iniciar sesión, este navegador recordará tu sesión. Cada navegador o dispositivo requiere iniciar sesión una vez.</p><button type="button" class="google-signin" data-action="google-auth"><span class="google-mark" aria-hidden="true">G</span> Continuar con Google</button><div class="auth-divider"><span>o continúa con tu correo</span></div><label class="form-label" for="auth-email">Correo electrónico</label><input class="form-input" id="auth-email" type="email" autocomplete="email" placeholder="tu@colegio.edu"><label class="form-label" for="auth-password">Contraseña</label><input class="form-input" id="auth-password" type="password" autocomplete="current-password" placeholder="Al menos 6 caracteres">','<button class="outline-button" data-action="close">Cancelar</button><button class="outline-button" data-action="sign-up">Crear cuenta</button><button class="primary-button" data-action="sign-in">Iniciar sesión</button>',true)
   }
   async function performAuth(mode){
     if(!supabase){toast('Supabase todavía no está listo. Recarga la página e inténtalo de nuevo.');return}
@@ -55,6 +55,14 @@
     if(result.error){setCloudStatus('Sin sincronizar');toast(result.error.message||'No se pudo iniciar sesión.');return}
     if(mode==='sign-up'&&!result.data.session){hideModal();toast('Cuenta creada. Revisa tu correo para confirmarla y luego inicia sesión.');return}
     currentUser=result.data.user||result.data.session?.user||currentUser;updateAuthUI();hideModal();await refreshCloudData()
+  }
+  async function performGoogleAuth(){
+    if(!supabase){toast('Supabase todavía no está listo. Recarga la página e inténtalo de nuevo.');return}
+    setCloudStatus('Conectando con Google…');
+    try{
+      const {error}=await supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo:new URL('./',window.location.href).toString()}});
+      if(error){setCloudStatus('Sin sincronizar');toast(error.message||'No se pudo iniciar sesión con Google.')}
+    }catch(error){setCloudStatus('Sin sincronizar');toast(authError(error))}
   }
   function authError(error){return error?.message||'No se pudo conectar con Supabase.'}
   function localBackup(){try{if(!localStorage.getItem(BACKUP_KEY))localStorage.setItem(BACKUP_KEY,JSON.stringify(state))}catch(_){}}
@@ -400,6 +408,7 @@
       case 'auth':authDialog();break;
       case 'sign-in':performAuth('sign-in');break;
       case 'sign-up':performAuth('sign-up');break;
+      case 'google-auth':performGoogleAuth();break;
       case 'sign-out':supabase.auth.signOut({scope:'local'}).then(({error})=>{if(error)toast(authError(error));else{currentUser=null;hideModal();refreshCloudData()}});break;
       case 'import-local':importLocalData();break;
       case 'use-cloud':useCloudCopy();break;
