@@ -130,7 +130,7 @@
     await refreshCloudData()
   }
   function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-  function logoMarkup(className='breadcrumb-logo',alt='PreludioPedia'){return `<img class="${className}" src="assets/preludiopedia-logo.webp?v=2" alt="${esc(alt)}" decoding="async">`}
+  function logoMarkup(className='breadcrumb-logo',alt='PreludioPedia'){return `<img class="${className}" src="assets/preludiopedia-logo-transparent.webp" alt="${esc(alt)}" decoding="async">`}
   function linkUrl(v){v=String(v||'').trim();return /^(https?:|mailto:|tel:|#|\/)/i.test(v)&&!/^\/\//.test(v)?v:''}
   function mediaUrl(v){v=String(v||'').trim();return /^https?:\/\//i.test(v)||/^data:(image|video|audio)\/[\w.+-]+;base64,/i.test(v)?v:''}
   function clean(html){
