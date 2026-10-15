@@ -412,3 +412,5 @@ button.nav-item[data-palette]:not(.primary-button):not(.outline-button):not(.sof
 button.nav-item.active[data-palette]:not(.primary-button):not(.outline-button):not(.soft-button){background:var(--brand-acid);color:#1b2119}
 button.nav-item.active[data-palette]:not(.primary-button):not(.outline-button):not(.soft-button):hover{background:var(--brand-acid-hover);color:#1b2119}
 :root[data-theme="dark"] body{background-color:var(--page);background-image:radial-gradient(ellipse at 88% 16%,rgba(201,237,104,.045),transparent 38%),linear-gradient(145deg,#101410,#141a15 60%,#111511);background-attachment:fixed}
+.section-heading h2:before{width:4px;height:17px;margin:0 11px 0 0;border-radius:1px;background:var(--brand-acid);box-shadow:none;transform:none}
+:root[data-theme="dark"] .section-heading h2:before{background:var(--brand-acid);box-shadow:none}
