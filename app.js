@@ -13,7 +13,7 @@
   };
   let state=load(), page='home', articleId='', editorId='', activeFolderId='', articleTab='article', selectedDesign='minimal', range=null, pickedMedia=null, slideIndex=0;
   let pendingWallpaper, audioRecorder=null, audioStream=null, recognition=null, cameraStream=null, cameraRecorder=null, cameraParts=[], cancelCamera=false, toastTimer;
-  let supabase=null,currentUser=null,cloudReady=false,cloudWriteEnabled=false,pendingLocalImport=null,syncQueue=Promise.resolve();
+  let supabase=null,currentUser=null,cloudReady=false,cloudWriteEnabled=false,pendingLocalImport=null,syncQueue=Promise.resolve(),revealObserver=null;
   const knownComments=new Set(),knownRevisions=new Set();
   const view=document.getElementById('view'), modal=document.getElementById('modal'), backdrop=document.getElementById('modal-backdrop'), content=document.getElementById('modal-content'), footer=document.getElementById('modal-footer');
   function id(){return crypto.randomUUID?.()||'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c==='x'?r:(r&3|8)).toString(16)})}
@@ -167,6 +167,20 @@
       button.dataset.palette=colors[index++%colors.length]
     })
   }
+  function setupRevealAnimations(){
+    revealObserver?.disconnect();revealObserver=null;
+    if(page==='present'){
+      const stage=document.querySelector('.present-stage');if(stage){stage.classList.remove('slide-arrive');void stage.offsetWidth;stage.classList.add('slide-arrive')}
+      return
+    }
+    const targets=[...view.querySelectorAll('.hero,.hero-copy,.home-section,.folder-card,.article-tile,.page-title-row,.article-header,.article-tabs,.article-index,.wiki-card,.discussion-panel,.side-card')];
+    targets.forEach((element,index)=>{element.classList.add('motion-reveal');element.style.setProperty('--reveal-order',String(Math.min(index%7,6)))});
+    if(!('IntersectionObserver' in window)){targets.forEach(element=>element.classList.add('motion-visible'));return}
+    revealObserver=new IntersectionObserver(entries=>entries.forEach(entry=>{
+      if(entry.isIntersecting){entry.target.classList.add('motion-visible');revealObserver?.unobserve(entry.target)}
+    }),{threshold:.08,rootMargin:'0px 0px -36px 0px'});
+    targets.forEach(element=>revealObserver.observe(element))
+  }
   function linkUrl(v){v=String(v||'').trim();return /^(https?:|mailto:|tel:|#|\/)/i.test(v)&&!/^\/\//.test(v)?v:''}
   function mediaUrl(v){v=String(v||'').trim();return /^https?:\/\//i.test(v)||/^data:(image|video|audio)\/[\w.+-]+;base64,/i.test(v)?v:''}
   function clean(html){
@@ -267,12 +281,12 @@
   function render(){
     design();count();folderNav();
     document.querySelectorAll('.nav-item[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page||(page==='article'&&b.dataset.page==='articles')));
-    if(page==='present'){view.innerHTML=presentation();typeset(document.getElementById('presentation-view'));applyButtonPalette();return}
+    if(page==='present'){view.innerHTML=presentation();typeset(document.getElementById('presentation-view'));applyButtonPalette();setupRevealAnimations();return}
     if(page==='articles')view.innerHTML=articles();
     else if(page==='folder')view.innerHTML=folderPage(activeFolderId);
     else if(page==='article'){const a=state.articles.find(x=>x.id===articleId);view.innerHTML=a?articleView(a):home();typeset(document.getElementById('article-content'))}
     else view.innerHTML=home()
-    applyButtonPalette()
+    applyButtonPalette();setupRevealAnimations()
   }
   function typeset(el){if(el&&window.MathJax?.typesetPromise)window.MathJax.typesetPromise([el]).catch(()=>{})}
   function showModal(title,html,buttons='',compact=false,extra=''){
