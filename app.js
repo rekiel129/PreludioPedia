@@ -8,7 +8,7 @@
     articles:[],
     folders:[],
     comments:[],revisions:[],
-    design:{theme:'light',accent:'#496579',wallpaper:'',overlay:.78,customCss:''},
+    design:{theme:'light',accent:'#315a43',wallpaper:'',overlay:.78,customCss:''},
     reading:{size:'normal',font:'sans',line:'comfortable'}
   };
   let state=load(), page='home', articleId='', editorId='', activeFolderId='', articleTab='article', selectedDesign='minimal', range=null, pickedMedia=null, slideIndex=0;
@@ -192,7 +192,7 @@
   function count(){const n=document.getElementById('article-count');if(n)n.textContent=state.articles.length}
   function design(){
     document.documentElement.dataset.theme=state.design.theme;
-    const accent=state.design.accent==='#496579'&&state.design.theme==='dark'?'#a3bfce':state.design.accent;
+    const legacyAccent=state.design.accent==='#496579',accent=legacyAccent?(state.design.theme==='dark'?'#b8dc8a':'#315a43'):state.design.accent;
     document.documentElement.style.setProperty('--accent',accent);
     document.documentElement.style.setProperty('--accent-soft',accent+(state.design.theme==='dark'?'33':'18'));
     if(state.design.wallpaper){const alpha=Math.max(0,Math.min(.95,Number(state.design.overlay))),rgb=state.design.theme==='dark'?'12,15,25':'247,248,252';document.body.style.backgroundImage='linear-gradient(rgba('+rgb+','+alpha+'),rgba('+rgb+','+alpha+')),url("'+state.design.wallpaper+'")';document.body.style.backgroundSize='cover';document.body.style.backgroundPosition='center';document.body.style.backgroundAttachment='fixed'}else document.body.style.backgroundImage='';
