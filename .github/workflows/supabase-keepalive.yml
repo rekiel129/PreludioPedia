@@ -1,0 +1,21 @@
+name: Mantener Supabase activo
+
+on:
+  schedule:
+    # Cuatro consultas al día, a un minuto distinto del inicio de la hora.
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Consulta pública mínima a Supabase
+        env:
+          SUPABASE_URL: https://ohqunzhslyxzhtwkfvof.supabase.co
+          SUPABASE_PUBLISHABLE_KEY: sb_publishable_VPhsSnRJnQ987RhR0_afTw_roajjBJU
+        run: >-
+          curl --fail --silent --show-error --max-time 30 -H "apikey: ${SUPABASE_PUBLISHABLE_KEY}" -H "Accept: application/json" "${SUPABASE_URL}/rest/v1/articles?select=id&limit=1" --output /dev/null
