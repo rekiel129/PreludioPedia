@@ -574,3 +574,18 @@ button:not(:disabled):active{transform:translateY(1px) scale(.975)}
 .pascal-fractal-controls output{margin-left:auto;color:var(--muted);font-size:10px;font-variant-numeric:tabular-nums}
 .pascal-fractal-note{margin:10px 0 0;color:var(--muted);font-size:.82em}
 @media(max-width:640px){.pascal-fractal-head{display:block}.pascal-fractal-legend{margin-top:9px}.pascal-fractal-controls label{flex-basis:100%}.pascal-fractal-controls output{margin-left:0}}
+
+/* Fit the complete 33-row triangle into desktop and phone article columns. */
+.pascal-fractal-stage{display:flex;justify-content:center;overflow:hidden}
+.pascal-fractal-artboard{width:100%;min-width:0;max-width:760px;aspect-ratio:1.2}
+@media(max-width:640px){
+  .pascal-sierpinski-widget{margin:1em 0;padding:10px;border-radius:13px}
+  .pascal-fractal-head{display:block}
+  .pascal-fractal-legend{margin-top:8px}
+  .pascal-fractal-stage{width:100%;border-radius:9px}
+  .pascal-fractal-artboard{width:100%;min-width:0;aspect-ratio:1.15}
+  .pascal-fractal-controls{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .pascal-fractal-controls label{grid-column:1/-1;flex:none}
+  .pascal-fractal-controls button{width:100%;min-height:38px;padding:8px 7px;white-space:normal}
+  .pascal-fractal-controls output{grid-column:1/-1;margin-left:0;text-align:right}
+}
