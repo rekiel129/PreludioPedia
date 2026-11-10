@@ -542,3 +542,10 @@ button:not(:disabled):active{transform:translateY(1px) scale(.975)}
 @keyframes slide-arrive{from{opacity:0;transform:translateX(30px);clip-path:inset(0 0 0 2%)}to{opacity:1;transform:translateX(0);clip-path:inset(0)}}
 @keyframes media-arrive{from{opacity:0;transform:scale(.975)}to{opacity:1;transform:scale(1)}}
 @media(prefers-reduced-motion:reduce){.motion-reveal,.motion-reveal.motion-visible{opacity:1;transform:none;filter:none;transition:none;will-change:auto}.present-stage.slide-arrive,.presentation-view{animation:none}}
+
+/* Article index: number primary headings, keep subtitles unnumbered. */
+.article-index ol{list-style:none;counter-reset:article-section;padding-left:0}
+.article-index li{list-style:none}
+.article-index li.level-1,.article-index li.level-2{counter-increment:article-section}
+.article-index li.level-1::before,.article-index li.level-2::before{content:counter(article-section) ". ";display:inline-block;min-width:1.35em;color:var(--accent);font-weight:700}
+.article-index li.level-3{list-style:none}
