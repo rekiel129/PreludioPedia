@@ -549,3 +549,28 @@ button:not(:disabled):active{transform:translateY(1px) scale(.975)}
 .article-index li.level-1,.article-index li.level-2{counter-increment:article-section}
 .article-index li.level-1::before,.article-index li.level-2::before{content:counter(article-section) ". ";display:inline-block;min-width:1.35em;color:var(--accent);font-weight:700}
 .article-index li.level-3{list-style:none}
+
+/* Shared wiki article visual and interactive Sierpinski reveal. */
+.pascal-sierpinski-widget{margin:1.4em 0;padding:clamp(14px,2.6vw,23px);border:1px solid var(--line);border-radius:17px;background:linear-gradient(145deg,var(--surface-soft),var(--surface));box-shadow:0 12px 32px rgba(24,39,38,.09)}
+:root[data-theme="dark"] .pascal-sierpinski-widget{box-shadow:0 15px 36px rgba(0,0,0,.23)}
+.pascal-fractal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:13px}
+.pascal-fractal-eyebrow{display:block;color:var(--accent);font:800 9px/1.4 "Space Grotesk",sans-serif;letter-spacing:1.2px}
+.pascal-fractal-head h3{margin:5px 0;font-size:1.18em}
+.pascal-fractal-head p{max-width:570px;margin:4px 0 0;color:var(--muted);font-size:.88em}
+.pascal-fractal-legend{display:flex;flex-wrap:wrap;gap:8px;padding-top:4px}
+.pascal-fractal-legend span{display:flex;align-items:center;gap:5px;white-space:nowrap;color:var(--muted);font-size:10px}
+.pascal-fractal-legend i{width:12px;height:12px;border:1px solid #87908a;border-radius:3px}
+.pascal-legend-odd{background:#111312}.pascal-legend-even{background:#fff}
+.pascal-fractal-stage{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;border:1px solid #d7dbd5;border-radius:12px;background:#f6f6f2;touch-action:pan-y}
+.pascal-fractal-artboard{position:relative;flex:0 0 auto;width:min(100%,760px);min-width:560px;aspect-ratio:1.55;background:#f6f6f2}
+.pascal-fractal-artboard canvas{display:block;width:100%;height:100%}
+.pascal-fractal-curtain{position:absolute;z-index:2;top:0;bottom:0;left:0;width:2px;background:#d99a3d;transform:translateX(-50%);pointer-events:none}
+.pascal-fractal-drag{position:absolute;top:50%;left:50%;display:grid;width:38px;height:48px;place-items:center;transform:translate(-50%,-50%);border:1px solid #c58730;border-radius:22px;background:#f3bc65;color:#392a19;font:700 17px/1 "DM Sans",sans-serif;box-shadow:0 3px 12px rgba(0,0,0,.22);cursor:ew-resize;pointer-events:auto;touch-action:none}
+.pascal-fractal-drag:hover{transform:translate(-50%,-50%) scale(1.04)}
+.pascal-fractal-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}
+.pascal-fractal-controls label{display:grid;flex:1 1 180px;gap:4px;color:var(--muted);font-size:10px}
+.pascal-fractal-controls input[type=range]{width:100%;accent-color:#16826a}
+.pascal-fractal-controls button{font-size:10px}
+.pascal-fractal-controls output{margin-left:auto;color:var(--muted);font-size:10px;font-variant-numeric:tabular-nums}
+.pascal-fractal-note{margin:10px 0 0;color:var(--muted);font-size:.82em}
+@media(max-width:640px){.pascal-fractal-head{display:block}.pascal-fractal-legend{margin-top:9px}.pascal-fractal-controls label{flex-basis:100%}.pascal-fractal-controls output{margin-left:0}}
