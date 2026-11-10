@@ -12,7 +12,7 @@
     reading:{size:'normal',font:'sans',line:'comfortable'}
   };
   let state=load(), page='home', articleId='', editorId='', activeFolderId='', articleTab='article', selectedDesign='minimal', range=null, pickedMedia=null, slideIndex=0;
-  let pendingWallpaper, audioRecorder=null, audioStream=null, recognition=null, cameraStream=null, cameraRecorder=null, cameraParts=[], cancelCamera=false, toastTimer;
+  let pendingWallpaper, audioRecorder=null, audioStream=null, recognition=null, cameraStream=null, cameraRecorder=null, cameraParts=[], cancelCamera=false, toastTimer, fractalCleanups=[];
   let supabase=null,currentUser=null,cloudReady=false,cloudWriteEnabled=false,pendingLocalImport=null,syncQueue=Promise.resolve(),revealObserver=null;
   const knownComments=new Set(),knownRevisions=new Set();
   const view=document.getElementById('view'), modal=document.getElementById('modal'), backdrop=document.getElementById('modal-backdrop'), content=document.getElementById('modal-content'), footer=document.getElementById('modal-footer');
@@ -278,13 +278,77 @@
     const designId=designDefs.some(d=>d.id===a.designId)?a.designId:'minimal';
     return `<div class="presentation-view" id="presentation-view"><div class="present-top"><span>${esc(a.title)}</span><button class="present-exit" data-action="exit-present">Salir · Esc</button></div><main class="present-stage article-design article-design-${designId}"><h1>${esc(s.title||a.title)}</h1>${body}</main><footer class="present-bottom"><button class="outline-button" data-action="prev" ${slideIndex===0?'disabled':''}>← Anterior</button><span>${slideIndex+1} / ${pages.length}</span><div class="present-progress"><i style="width:${(slideIndex+1)/pages.length*100}%"></i></div><button class="primary-button" data-action="next" ${slideIndex===pages.length-1?'disabled':''}>Siguiente →</button><button class="present-exit" data-action="present-fullscreen">⛶</button></footer></div>`
   }
+  function clearFractalWidgets(){fractalCleanups.forEach(cleanup=>{try{cleanup()}catch(_){}});fractalCleanups=[]}
+  function clearFractalWidgets(){fractalCleanups.forEach(cleanup=>{try{cleanup()}catch(_){}});fractalCleanups=[]}
+  function mountPascalFractals(root){
+    if(!root)return;
+    root.querySelectorAll('.pascal-sierpinski-widget').forEach(host=>{
+      if(host.dataset.fractalReady==='true')return;
+      host.dataset.fractalReady='true';
+      host.innerHTML='<div class="pascal-fractal-head"><div><span class="pascal-fractal-eyebrow">EXPLORACIÓN INTERACTIVA · 19 FILAS</span><h3>De Pascal a Sierpinski</h3><p>Arrastra la cortina con el mouse para revelar el patrón. También puedes usar el control deslizante o animar el cambio.</p></div><div class="pascal-fractal-legend"><span><i class="pascal-legend-odd"></i>Impar: negro</span><span><i class="pascal-legend-even"></i>Par: blanco</span></div></div><div class="pascal-fractal-stage"><div class="pascal-fractal-artboard"><canvas aria-label="Triángulo de Pascal de 19 filas que se transforma en el patrón de Sierpinski"></canvas><div class="pascal-fractal-curtain" aria-hidden="true"><button type="button" class="pascal-fractal-drag" aria-label="Arrastrar la cortina" title="Arrastra para cambiar la vista">↔</button></div></div></div><div class="pascal-fractal-controls"><label><span>Avance de la cortina</span><input type="range" min="0" max="100" step="1" value="0" aria-label="Avance de la cortina"></label><button type="button" class="primary-button small" data-fractal-action="animate">Animar transformación</button><button type="button" class="outline-button small" data-fractal-action="reset">Ver triángulo</button><output aria-live="polite">0% transformado</output></div><p class="pascal-fractal-note">Las filas van de 0 a 18. Cada coeficiente impar se muestra en negro y cada par en blanco; al completar la cortina aparece el patrón fractal.</p>';
+      const stage=host.querySelector('.pascal-fractal-stage'),artboard=host.querySelector('.pascal-fractal-artboard'),canvas=host.querySelector('canvas'),curtain=host.querySelector('.pascal-fractal-curtain'),handle=host.querySelector('.pascal-fractal-drag'),range=host.querySelector('input[type="range"]'),output=host.querySelector('output'),animateButton=host.querySelector('[data-fractal-action="animate"]'),resetButton=host.querySelector('[data-fractal-action="reset"]');
+      const ctx=canvas.getContext('2d',{alpha:false});
+      if(!ctx){host.textContent='Este navegador no puede mostrar el gráfico interactivo.';return}
+      const rows=[[1]];
+      for(let row=1;row<19;row++){const prev=rows[row-1],next=[1];for(let col=1;col<row;col++)next[col]=prev[col-1]+prev[col];next.push(1);rows.push(next)}
+      let progress=0,drawFrame=0,animationFrame=0,dragging=false;
+      function paint(){
+        drawFrame=0;
+        const rect=artboard.getBoundingClientRect(),width=Math.round(rect.width),height=Math.round(rect.height);
+        if(!width||!height)return;
+        const dpr=Math.min(window.devicePixelRatio||1,2),pixelWidth=Math.round(width*dpr),pixelHeight=Math.round(height*dpr);
+        if(canvas.width!==pixelWidth||canvas.height!==pixelHeight){canvas.width=pixelWidth;canvas.height=pixelHeight}
+        ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle='#f6f6f2';ctx.fillRect(0,0,width,height);
+        const padX=22,padY=14,stepX=(width-padX*2)/18,stepY=(height-padY*2)/18,cells=[];
+        rows.forEach((values,row)=>values.forEach((value,col)=>{
+          const x=width/2-row*stepX/2+col*stepX,y=padY+row*stepY;
+          cells.push({x,y,value});
+          const digits=String(value).length,fontSize=Math.max(7,Math.min(14,stepX*.72/(digits*.58)));
+          ctx.font='600 '+fontSize+'px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#24302c';ctx.fillText(String(value),x,y)
+        }));
+        ctx.save();ctx.beginPath();ctx.rect(0,0,width*progress,height);ctx.clip();
+        const radius=Math.max(5,Math.min(stepX*.43,stepY*.45));
+        cells.forEach(cell=>{const odd=cell.value%2===1;ctx.beginPath();ctx.arc(cell.x,cell.y,radius,0,Math.PI*2);ctx.fillStyle=odd?'#111312':'#ffffff';ctx.strokeStyle=odd?'#111312':'#b8bfba';ctx.lineWidth=odd?1:.9;ctx.fill();ctx.stroke()});
+        ctx.restore();
+        if(progress>0&&progress<1){const split=width*progress;ctx.beginPath();ctx.moveTo(split,0);ctx.lineTo(split,height);ctx.lineWidth=2;ctx.strokeStyle='#d99a3d';ctx.stroke()}
+        curtain.style.left=Math.max(18,Math.min(width-18,width*progress))+'px';range.value=String(Math.round(progress*100));output.textContent=Math.round(progress*100)+'% transformado'
+      }
+      function schedulePaint(){if(!drawFrame)drawFrame=requestAnimationFrame(paint)}
+      function setProgress(value){progress=Math.max(0,Math.min(1,value));schedulePaint()}
+      function stopAnimation(){if(animationFrame){cancelAnimationFrame(animationFrame);animationFrame=0}}
+      function moveCurtain(event){const rect=canvas.getBoundingClientRect();setProgress((event.clientX-rect.left)/Math.max(rect.width,1))}
+      stage.addEventListener('pointerdown',event=>{
+        if(event.pointerType==='touch'&&!event.target.closest('.pascal-fractal-drag'))return;
+        if(event.pointerType==='mouse'&&event.button!==0)return;
+        event.preventDefault();stopAnimation();dragging=true;try{stage.setPointerCapture(event.pointerId)}catch(_){}moveCurtain(event)
+      });
+      stage.addEventListener('pointermove',event=>{if(dragging)moveCurtain(event)});
+      stage.addEventListener('pointerup',()=>{dragging=false});
+      stage.addEventListener('pointercancel',()=>{dragging=false});
+      range.addEventListener('input',()=>{stopAnimation();setProgress(Number(range.value)/100)});
+      animateButton.addEventListener('click',()=>{
+        stopAnimation();const from=progress,start=performance.now(),duration=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?1:1500;
+        const step=now=>{const t=Math.min(1,(now-start)/duration),ease=1-Math.pow(1-t,3);progress=from+(1-from)*ease;schedulePaint();if(t<1)animationFrame=requestAnimationFrame(step);else animationFrame=0};
+        animationFrame=requestAnimationFrame(step)
+      });
+      resetButton.addEventListener('click',()=>{stopAnimation();setProgress(0)});
+      handle.addEventListener('keydown',event=>{
+        if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();event.stopPropagation();stopAnimation();if(event.key==='Home')setProgress(0);else if(event.key==='End')setProgress(1);else setProgress(progress+(event.key==='ArrowRight'?.03:-.03))}
+      });
+      const resizeObserver=window.ResizeObserver?new ResizeObserver(schedulePaint):null;
+      if(resizeObserver)resizeObserver.observe(artboard);else window.addEventListener('resize',schedulePaint,{passive:true});
+      fractalCleanups.push(()=>{stopAnimation();if(drawFrame)cancelAnimationFrame(drawFrame);resizeObserver?.disconnect();if(!resizeObserver)window.removeEventListener('resize',schedulePaint)});
+      schedulePaint()
+    })
+  }
   function render(){
+    clearFractalWidgets();
     design();count();folderNav();
     document.querySelectorAll('.nav-item[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page||(page==='article'&&b.dataset.page==='articles')));
-    if(page==='present'){view.innerHTML=presentation();typeset(document.getElementById('presentation-view'));applyButtonPalette();setupRevealAnimations();return}
+    if(page==='present'){view.innerHTML=presentation();typeset(document.getElementById('presentation-view'));mountPascalFractals(document.getElementById('presentation-view'));applyButtonPalette();setupRevealAnimations();return}
     if(page==='articles')view.innerHTML=articles();
     else if(page==='folder')view.innerHTML=folderPage(activeFolderId);
-    else if(page==='article'){const a=state.articles.find(x=>x.id===articleId);view.innerHTML=a?articleView(a):home();typeset(document.getElementById('article-content'))}
+    else if(page==='article'){const a=state.articles.find(x=>x.id===articleId);view.innerHTML=a?articleView(a):home();typeset(document.getElementById('article-content'));mountPascalFractals(document.getElementById('article-content'))}
     else view.innerHTML=home()
     applyButtonPalette();setupRevealAnimations()
   }
