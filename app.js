@@ -285,12 +285,12 @@
     root.querySelectorAll('.pascal-sierpinski-widget').forEach(host=>{
       if(host.dataset.fractalReady==='true')return;
       host.dataset.fractalReady='true';
-      host.innerHTML='<div class="pascal-fractal-head"><div><span class="pascal-fractal-eyebrow">EXPLORACIÓN INTERACTIVA · 19 FILAS</span><h3>De Pascal a Sierpinski</h3><p>Arrastra la cortina con el mouse para revelar el patrón. También puedes usar el control deslizante o animar el cambio.</p></div><div class="pascal-fractal-legend"><span><i class="pascal-legend-odd"></i>Impar: negro</span><span><i class="pascal-legend-even"></i>Par: blanco</span></div></div><div class="pascal-fractal-stage"><div class="pascal-fractal-artboard"><canvas aria-label="Triángulo de Pascal de 19 filas que se transforma en el patrón de Sierpinski"></canvas><div class="pascal-fractal-curtain" aria-hidden="true"><button type="button" class="pascal-fractal-drag" aria-label="Arrastrar la cortina" title="Arrastra para cambiar la vista">↔</button></div></div></div><div class="pascal-fractal-controls"><label><span>Avance de la cortina</span><input type="range" min="0" max="100" step="1" value="0" aria-label="Avance de la cortina"></label><button type="button" class="primary-button small" data-fractal-action="animate">Animar transformación</button><button type="button" class="outline-button small" data-fractal-action="reset">Ver triángulo</button><output aria-live="polite">0% transformado</output></div><p class="pascal-fractal-note">Las filas van de 0 a 18. Cada coeficiente impar se muestra en negro y cada par en blanco; al completar la cortina aparece el patrón fractal.</p>';
+      host.innerHTML='<div class="pascal-fractal-head"><div><span class="pascal-fractal-eyebrow">EXPLORACIÓN INTERACTIVA · 33 FILAS</span><h3>De Pascal a Sierpinski</h3><p>Arrastra la cortina con el mouse para revelar el patrón. También puedes usar el control deslizante o animar el cambio.</p></div><div class="pascal-fractal-legend"><span><i class="pascal-legend-odd"></i>Impar: negro</span><span><i class="pascal-legend-even"></i>Par: blanco</span></div></div><div class="pascal-fractal-stage"><div class="pascal-fractal-artboard"><canvas aria-label="Triángulo de Pascal de 33 filas que se transforma en el patrón de Sierpinski"></canvas><div class="pascal-fractal-curtain" aria-hidden="true"><button type="button" class="pascal-fractal-drag" aria-label="Arrastrar la cortina" title="Arrastra para cambiar la vista">↔</button></div></div></div><div class="pascal-fractal-controls"><label><span>Avance de la cortina</span><input type="range" min="0" max="100" step="1" value="0" aria-label="Avance de la cortina"></label><button type="button" class="primary-button small" data-fractal-action="animate">Animar transformación</button><button type="button" class="outline-button small" data-fractal-action="reset">Ver triángulo</button><output aria-live="polite">0% transformado</output></div><p class="pascal-fractal-note">Las filas van de 0 a 32. Cada coeficiente impar se muestra en negro y cada par en blanco; en pantallas pequeñas, los valores que no caben se simplifican a puntos para mostrar el patrón completo.</p>';
       const stage=host.querySelector('.pascal-fractal-stage'),artboard=host.querySelector('.pascal-fractal-artboard'),canvas=host.querySelector('canvas'),curtain=host.querySelector('.pascal-fractal-curtain'),handle=host.querySelector('.pascal-fractal-drag'),range=host.querySelector('input[type="range"]'),output=host.querySelector('output'),animateButton=host.querySelector('[data-fractal-action="animate"]'),resetButton=host.querySelector('[data-fractal-action="reset"]');
       const ctx=canvas.getContext('2d',{alpha:false});
       if(!ctx){host.textContent='Este navegador no puede mostrar el gráfico interactivo.';return}
       const rows=[[1]];
-      for(let row=1;row<19;row++){const prev=rows[row-1],next=[1];for(let col=1;col<row;col++)next[col]=prev[col-1]+prev[col];next.push(1);rows.push(next)}
+      for(let row=1;row<33;row++){const prev=rows[row-1],next=[1];for(let col=1;col<row;col++)next[col]=prev[col-1]+prev[col];next.push(1);rows.push(next)}
       let progress=0,drawFrame=0,animationFrame=0,dragging=false;
       function paint(){
         drawFrame=0;
@@ -299,15 +299,16 @@
         const dpr=Math.min(window.devicePixelRatio||1,2),pixelWidth=Math.round(width*dpr),pixelHeight=Math.round(height*dpr);
         if(canvas.width!==pixelWidth||canvas.height!==pixelHeight){canvas.width=pixelWidth;canvas.height=pixelHeight}
         ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle='#f6f6f2';ctx.fillRect(0,0,width,height);
-        const padX=22,padY=14,stepX=(width-padX*2)/18,stepY=(height-padY*2)/18,cells=[];
+        const padX=22,padY=14,intervals=rows.length-1,stepX=(width-padX*2)/intervals,stepY=(height-padY*2)/intervals,cells=[];
         rows.forEach((values,row)=>values.forEach((value,col)=>{
           const x=width/2-row*stepX/2+col*stepX,y=padY+row*stepY;
           cells.push({x,y,value});
-          const digits=String(value).length,fontSize=Math.max(7,Math.min(14,stepX*.72/(digits*.58)));
-          ctx.font='600 '+fontSize+'px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#24302c';ctx.fillText(String(value),x,y)
+          const label=String(value),digits=label.length,fontSize=Math.max(4.2,Math.min(14,stepX*.88/(digits*.58)));
+          ctx.font='600 '+fontSize+'px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+          if(ctx.measureText(label).width<=stepX*.9){ctx.fillStyle='#24302c';ctx.fillText(label,x,y)}else{ctx.beginPath();ctx.arc(x,y,Math.max(1.2,Math.min(stepX*.13,stepY*.13)),0,Math.PI*2);ctx.fillStyle='#9da8a2';ctx.fill()}
         }));
         ctx.save();ctx.beginPath();ctx.rect(0,0,width*progress,height);ctx.clip();
-        const radius=Math.max(5,Math.min(stepX*.43,stepY*.45));
+        const radius=Math.max(1.2,Math.min(stepX*.43,stepY*.45));
         cells.forEach(cell=>{const odd=cell.value%2===1;ctx.beginPath();ctx.arc(cell.x,cell.y,radius,0,Math.PI*2);ctx.fillStyle=odd?'#111312':'#ffffff';ctx.strokeStyle=odd?'#111312':'#b8bfba';ctx.lineWidth=odd?1:.9;ctx.fill();ctx.stroke()});
         ctx.restore();
         if(progress>0&&progress<1){const split=width*progress;ctx.beginPath();ctx.moveTo(split,0);ctx.lineTo(split,height);ctx.lineWidth=2;ctx.strokeStyle='#d99a3d';ctx.stroke()}
