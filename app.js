@@ -69,10 +69,10 @@
   function readLocalBackup(){try{const value=JSON.parse(localStorage.getItem(BACKUP_KEY)||'null');return value&&Array.isArray(value.articles)?value:null}catch(_){return null}}
   function showLocalImportDialog(){if(!currentUser||!pendingLocalImport||backdrop.hidden===false)return;showModal('Encontré cambios de este dispositivo','<p class="help-text">Hay contenido local que todavía no aparece en la wiki compartida. Puedes unirlo con la nube o continuar con la copia compartida.</p><ul><li>'+pendingLocalImport.articles.length+' artículos</li><li>'+pendingLocalImport.folders.length+' carpetas</li><li>'+pendingLocalImport.comments.length+' comentarios</li><li>'+pendingLocalImport.revisions.length+' revisiones</li></ul>','<button class="outline-button" data-action="use-cloud">Usar la wiki en la nube</button><button class="primary-button" data-action="import-local">Unir con la nube</button>')}
   function remoteDataEmpty(data){return !data.articles.length&&!data.folders.length&&!data.comments.length&&!data.revisions.length}
-  function localChangesAgainstCloud(local,data){
+  function localChangesAgainstCloud(local,data,backupOnly=false){
     const remoteArticles=new Map(data.articles.map(a=>[a.id,a])),remoteFolders=new Map(data.folders.map(f=>[f.id,f])),remoteComments=new Set(data.comments.map(c=>c.id)),remoteRevisions=new Set(data.revisions.map(r=>r.id));
     return {
-      articles:(local?.articles||[]).filter(a=>{const remote=remoteArticles.get(a.id);return !remote||a.title!==remote.title||clean(a.body||'')!==clean(remote.body||'')||(a.designId||'minimal')!==(remote.designId||'minimal')||(a.folderId||'')!==(remote.folderId||'')}),
+      articles:(local?.articles||[]).filter(a=>{const remote=remoteArticles.get(a.id);if(!remote)return true;const differs=a.title!==remote.title||clean(a.body||'')!==clean(remote.body||'')||(a.designId||'minimal')!==(remote.designId||'minimal')||(a.folderId||'')!==(remote.folderId||'');if(!differs)return false;if(!backupOnly)return true;return(Date.parse(a.updated||a.created||'')||0)>=(Date.parse(remote.updated||'')||0)}),
       folders:(local?.folders||[]).filter(f=>{const remote=remoteFolders.get(f.id);return !remote||remote.name!==f.name||(remote.description||'')!==(f.description||'')}),
       comments:(local?.comments||[]).filter(c=>!remoteComments.has(c.id)),
       revisions:(local?.revisions||[]).filter(r=>!remoteRevisions.has(r.id))
@@ -91,7 +91,7 @@
     const [articleResult,folderResult,commentResult,revisionResult]=results;
     const data={articles:(articleResult.data||[]).map(r=>({id:r.id,title:r.title,body:r.body_html||'',designId:r.design_id||'minimal',folderId:r.folder_id||'',createdBy:r.created_by||'',created:r.created_at,updated:r.updated_at})),folders:(folderResult.data||[]).map(r=>({id:r.id,name:r.name,description:r.description||'',createdBy:r.created_by||'',created:r.created_at})),comments:(commentResult.data||[]).map(r=>({id:r.id,articleId:r.article_id,authorId:r.author_id||'',author:r.author_name||'Preludiano/a',body:r.body,date:r.created_at})),revisions:(revisionResult.data||[]).map(r=>({id:r.id,articleId:r.article_id,editorId:r.editor_id||'',title:r.title,body:r.body_html||'',date:r.created_at}))};
     knownComments.clear();data.comments.forEach(c=>knownComments.add(c.id));knownRevisions.clear();data.revisions.forEach(r=>knownRevisions.add(r.id));
-    const latestLocal=JSON.parse(JSON.stringify(state)),backup=readLocalBackup(),localChanges=localChangesAgainstCloud(latestLocal,data),backupChanges=localChangesAgainstCloud(backup,data),pending=mergePendingSnapshots(backupChanges,localChanges);
+    const latestLocal=JSON.parse(JSON.stringify(state)),backup=readLocalBackup(),localChanges=localChangesAgainstCloud(latestLocal,data),backupChanges=localChangesAgainstCloud(backup,data,true),pending=mergePendingSnapshots(backupChanges,localChanges);
     pendingLocalImport=hasSharedContent(pending)?pending:null;
     if(pendingLocalImport&&hasSharedContent(latestLocal))localBackup(latestLocal);
     state={...JSON.parse(JSON.stringify(initial)),design:latestLocal.design,reading:latestLocal.reading,...data};cloudWriteEnabled=true;
