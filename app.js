@@ -12,6 +12,7 @@
     reading:{size:'normal',font:'sans',line:'comfortable'}
   };
   let state=load(), page='home', articleId='', editorId='', activeFolderId='', articleTab='article', selectedDesign='minimal', range=null, pickedMedia=null, slideIndex=0;
+  let editorAutosaveTimer=null, editorSessionBase=null, editorLastQueuedDraft=null, editorRevisionSaved=false;
   let pendingWallpaper, audioRecorder=null, audioStream=null, recognition=null, cameraStream=null, cameraRecorder=null, cameraParts=[], cancelCamera=false, toastTimer, fractalCleanups=[];
   let supabase=null,currentUser=null,cloudReady=false,cloudWriteEnabled=false,pendingLocalImport=null,syncQueue=Promise.resolve(),revealObserver=null;
   const knownComments=new Set(),knownRevisions=new Set();
@@ -39,7 +40,8 @@
   const isUuid=v=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v||''));
   const hasSharedContent=s=>!!(s?.articles?.length||s?.folders?.length||s?.comments?.length||s?.revisions?.length);
   function setCloudStatus(message){const el=document.getElementById('storage-label');if(el){el.textContent=message;el.title=currentUser?'Pulsa para revisar la sincronización y recuperar cambios pendientes':message;el.setAttribute('aria-label','Estado de sincronización: '+message+'. Pulsa para revisar cambios pendientes.')}}
-  function updateAuthUI(){const b=document.getElementById('auth-button');if(b){b.textContent=currentUser?(currentUser.email?.split('@')[0]||'Mi cuenta'):'Iniciar sesión';b.title=currentUser?'Cuenta y cierre de sesión':'Inicia sesión para editar y colaborar'}const status=document.getElementById('storage-label')?.textContent;if(!currentUser)setCloudStatus('Lectura pública · inicia sesión para editar');else if(['Sin sincronizar','Pendiente de sincronizar','Sin conexión · cambios locales','Cambios locales por recuperar','Sincronizando…','Cargando…','Conexión recuperada · revisando cambios'].includes(status))return;else setCloudStatus(cloudReady?'Guardado en la nube':'Conectando nube…')}
+  function setEditorSaveLabel(message){const label=document.querySelector('.editor-status span:last-child');if(label)label.textContent=message}
+  function updateAuthUI(){const b=document.getElementById('auth-button');if(b){b.textContent=currentUser?(currentUser.email?.split('@')[0]||'Mi cuenta'):'Iniciar sesión';b.title=currentUser?'Cuenta y cierre de sesión':'Inicia sesión para editar y colaborar'}const status=document.getElementById('storage-label')?.textContent;if(!currentUser)setCloudStatus('Lectura pública · inicia sesión para editar');else if(['Sin sincronizar','Pendiente de sincronizar','Sin conexión · cambios locales','Cambios locales por recuperar','Sincronizando…','Guardando cambios…','Cargando…','Conexión recuperada · revisando cambios'].includes(status))return;else setCloudStatus(cloudReady?'Guardado en la nube':'Conectando nube…')}
   function requireEditor(){if(currentUser)return true;toast('Inicia sesión para crear y editar en la wiki.');authDialog();return false}
   function authDialog(){
     if(currentUser){showModal('Tu cuenta','<p class="help-text">Sesión iniciada como</p><p><strong>'+esc(currentUser.email||'Usuario')+'</strong></p><p class="help-text">Tus artículos y cambios se guardan en la nube. Este navegador recordará tu sesión; cerrar sesión aquí no desconecta tus otros dispositivos.</p>','<button class="outline-button" data-action="close">Cerrar</button><button class="primary-button" data-action="sign-out">Cerrar sesión</button>',true);return}
@@ -134,13 +136,13 @@
     if(comments.length){const {error}=await supabase.from('comments').upsert(comments,{onConflict:'id',ignoreDuplicates:true});if(error)throw error;comments.forEach(c=>knownComments.add(c.id))}
     const revisions=revisionsToSync.filter(r=>!knownRevisions.has(r.id)).map(r=>({id:r.id,article_id:r.articleId,editor_id:r.editorId||currentUser.id,title:r.title,body_html:clean(r.body),created_at:r.date||now}));
     if(revisions.length){const {error}=await supabase.from('revisions').upsert(revisions,{onConflict:'id',ignoreDuplicates:true});if(error)throw error;revisions.forEach(r=>knownRevisions.add(r.id))}
-    save();try{localStorage.removeItem(BACKUP_KEY)}catch(_){}setCloudStatus('Guardado en la nube')
+    save();try{localStorage.removeItem(BACKUP_KEY)}catch(_){}setCloudStatus('Guardado en la nube');setEditorSaveLabel('Todos los cambios están en la nube')
   }
   function queueCloudSync(changeSet){
     if(!currentUser)return;
-    if(!supabase||!cloudReady||!cloudWriteEnabled||!navigator.onLine){localBackup(state);setCloudStatus(navigator.onLine?'Pendiente de sincronizar':'Sin conexión · cambios locales');return}
-    setCloudStatus('Sincronizando…');
-    syncQueue=syncQueue.then(()=>syncCloudNow(changeSet)).catch(error=>{localBackup(state);setCloudStatus('Sin sincronizar');toast('El cambio quedó guardado en este dispositivo, pero no llegó a la nube: '+authError(error)+'. Puedes recuperarlo desde el estado de sincronización.')});
+    if(!supabase||!cloudReady||!cloudWriteEnabled||!navigator.onLine){localBackup(state);setCloudStatus(navigator.onLine?'Pendiente de sincronizar':'Sin conexión · cambios locales');setEditorSaveLabel(navigator.onLine?'Guardado en este dispositivo · pendiente de sincronizar':'Sin conexión · guardado en este dispositivo');return}
+    setCloudStatus('Sincronizando…');setEditorSaveLabel('Guardado local · sincronizando con la nube…');
+    syncQueue=syncQueue.then(()=>syncCloudNow(changeSet)).catch(error=>{localBackup(state);setCloudStatus('Sin sincronizar');setEditorSaveLabel('Guardado local · nube no disponible');toast('El cambio quedó guardado en este dispositivo, pero no llegó a la nube: '+authError(error)+'. Puedes recuperarlo desde el estado de sincronización.')});
   }
   async function importLocalData(){
     if(!requireEditor()||!pendingLocalImport)return;
@@ -358,7 +360,7 @@
     document.getElementById('modal-title').textContent=title;document.getElementById('modal-eyebrow').innerHTML=logoMarkup('eyebrow-logo','PreludioPedia');content.innerHTML=html;footer.innerHTML=buttons;modal.className='modal'+(compact?' compact':'')+(extra?' '+extra:'');backdrop.hidden=false;applyButtonPalette();
     const first=content.querySelector('input:not([type=file]),textarea,select');if(first)setTimeout(()=>first.focus(),25)
   }
-  function hideModal(){hideAux();stopCamera(true);if(audioRecorder?.state==='recording')audioRecorder.stop();recognition?.stop?.();recognition=null;backdrop.hidden=true;modal.className='modal'}
+  function hideModal(){flushEditorAutosave();hideAux();stopCamera(true);if(audioRecorder?.state==='recording')audioRecorder.stop();recognition?.stop?.();recognition=null;backdrop.hidden=true;modal.className='modal'}
   function showAux(title,html,buttons){
     const host=document.getElementById('editor-aux');if(!host)return;
     document.getElementById('aux-title').textContent=title;document.getElementById('aux-content').innerHTML=html;document.getElementById('aux-footer').innerHTML=buttons;host.hidden=false;applyButtonPalette();
@@ -394,7 +396,7 @@
   }
   function edit(idValue){
     if(!requireEditor())return;
-    const a=state.articles.find(x=>x.id===idValue);if(!a)return;editorId=a.id;range=null;pickedMedia=null;
+    flushEditorAutosave();const a=state.articles.find(x=>x.id===idValue);if(!a)return;editorId=a.id;range=null;pickedMedia=null;editorAutosaveTimer=null;editorSessionBase={title:a.title,body:clean(a.body||'')};editorLastQueuedDraft={...editorSessionBase};editorRevisionSaved=false;
     const designId=designDefs.some(d=>d.id===a.designId)?a.designId:'minimal';
     const body=clean(a.body);
     const html=`<div class="editor-title-row"><input class="form-input" id="editor-title" value="${esc(a.title)}" aria-label="Título del artículo"></div>
@@ -411,19 +413,34 @@
       <label>Color del texto <input type="color" id="text-color" value="#20253a"></label><label>Resaltado <input type="color" id="highlight-color" value="#fff1a8"></label></div></div>
       <button class="toolbar-button" data-action="fullscreen-editor" title="Pantalla completa">⛶</button></div>
       <div class="editor-wrap"><div class="editor-canvas article-design article-design-${designId}" id="editor-canvas" contenteditable="true" spellcheck="true" data-placeholder="Empieza a escribir. No hay secciones obligatorias.">${body}</div></div>
-      <div class="editor-status"><span id="word-count">0 palabras</span><span>Los cambios se guardan al pulsar «Guardar artículo»</span></div>
+      <div class="editor-status"><span id="word-count">0 palabras</span><span>Guardado automático en la nube</span></div>
       <div class="editor-submodal" id="editor-aux" hidden><div class="submodal-card"><h3 id="aux-title"></h3><div id="aux-content"></div><div class="submodal-actions" id="aux-footer"></div></div></div>
       <div class="capture-panel" id="capture-panel" hidden><div class="capture-card"><h3>Grabar con la cámara</h3><video id="camera-preview" autoplay muted playsinline></video><p class="help-text" id="capture-status">Permite el acceso a la cámara y al micrófono.</p><div class="capture-actions"><button class="outline-button" data-action="close-camera">Cancelar</button><button class="primary-button" data-action="start-camera">● Grabar</button><button class="primary-button" data-action="stop-camera" hidden>Detener y añadir</button></div></div></div>`;
     showModal('Editor de artículo',html,'<button class="outline-button" data-action="close">Cerrar</button><button class="primary-button" data-action="save-article">Guardar artículo</button>',false,'editor-modal');
-    const ed=editor();ed.addEventListener('keyup',saveRange);ed.addEventListener('mouseup',saveRange);ed.addEventListener('input',wordCount);wordCount()
+    const ed=editor();ed.addEventListener('keyup',saveRange);ed.addEventListener('mouseup',saveRange);ed.addEventListener('input',()=>{saveRange();wordCount();scheduleEditorAutosave()});document.getElementById('editor-title')?.addEventListener('input',scheduleEditorAutosave);wordCount()
   }
   function editor(){return document.getElementById('editor-canvas')}
   function saveRange(){const e=editor(),s=getSelection();if(e&&s?.rangeCount&&e.contains(s.anchorNode))range=s.getRangeAt(0).cloneRange()}
   function focusEditor(){const e=editor();if(!e)return null;e.focus();if(range&&e.contains(range.commonAncestorContainer)){const s=getSelection();s.removeAllRanges();s.addRange(range)}return e}
-  function insert(html){const e=focusEditor();if(!e)return;document.execCommand('insertHTML',false,html);saveRange();wordCount()}
-  function insertText(text){if(!focusEditor())return;document.execCommand('insertText',false,text);saveRange();wordCount()}
+  function insert(html){const e=focusEditor();if(!e)return;document.execCommand('insertHTML',false,html);saveRange();wordCount();scheduleEditorAutosave()}
+  function insertText(text){if(!focusEditor())return;document.execCommand('insertText',false,text);saveRange();wordCount();scheduleEditorAutosave()}
   function wordCount(){const e=editor(),w=document.getElementById('word-count');if(e&&w){const n=e.innerText.trim().split(/\s+/).filter(Boolean).length;w.textContent=n+' '+(n===1?'palabra':'palabras')}}
-  function command(cmd){focusEditor();if(cmd==='formatBlock')document.execCommand(cmd,false,document.getElementById('block-format')?.value||'P');else document.execCommand(cmd,false,null);saveRange();wordCount()}
+  function command(cmd){focusEditor();if(cmd==='formatBlock')document.execCommand(cmd,false,document.getElementById('block-format')?.value||'P');else document.execCommand(cmd,false,null);saveRange();wordCount();scheduleEditorAutosave()}
+  function scheduleEditorAutosave(){
+    if(!currentUser||!editorId||!editor())return;
+    clearTimeout(editorAutosaveTimer);const label=document.querySelector('.editor-status span:last-child');if(label)label.textContent='Guardando automáticamente…';
+    editorAutosaveTimer=setTimeout(()=>{editorAutosaveTimer=null;persistEditorDraft()},750)
+  }
+  function persistEditorDraft(){
+    const a=state.articles.find(x=>x.id===editorId),ed=editor();if(!currentUser||!a||!ed)return false;
+    const inputTitle=document.getElementById('editor-title')?.value.trim()||'',duplicate=inputTitle&&state.articles.some(x=>x.id!==a.id&&x.title.toLowerCase()===inputTitle.toLowerCase()),title=inputTitle&&!duplicate?inputTitle:a.title,body=clean(ed.innerHTML||'');
+    const previous=editorLastQueuedDraft||{title:a.title,body:a.body||''};if(previous.title===title&&previous.body===body)return false;
+    let revision=null;const base=editorSessionBase||previous;
+    if(!editorRevisionSaved&&(base.body||base.title!==title)){revision={id:id(),articleId:a.id,editorId:currentUser.id,title:base.title,body:base.body,date:new Date().toISOString()};state.revisions.unshift(revision);state.revisions=state.revisions.slice(0,50);editorRevisionSaved=true}
+    a.title=title;a.body=body;a.updated=new Date().toISOString();editorLastQueuedDraft={title,body};save();queueCloudSync({articles:new Set([a.id]),revisions:new Set(revision?[revision.id]:[])});
+    const label=document.querySelector('.editor-status span:last-child');if(label)label.textContent=duplicate?'El título ya existe; el contenido sigue guardándose':'Guardado automático · sincronizando…';return true
+  }
+  function flushEditorAutosave(){if(editorAutosaveTimer){clearTimeout(editorAutosaveTimer);editorAutosaveTimer=null}return persistEditorDraft()}
   function fileData(file,done){const r=new FileReader();r.onload=()=>done(String(r.result));r.onerror=()=>toast('No se pudo leer el archivo.');r.readAsDataURL(file)}
   async function addImage(file,alt=file?.name||'Imagen'){
     if(!file?.type.startsWith('image/'))return;if(file.size>3000000){toast('La imagen supera el límite de 3 MB.');return}
@@ -447,10 +464,10 @@
   function saveLatex(){const src=document.getElementById('latex-input')?.value.trim();if(!src){toast('Escribe una fórmula en LaTeX.');return}const v=src.replace(/[<>]/g,'');insert(`<span class="latex-inline" data-latex="${esc(v)}">\\(${esc(v)}\\)</span>`);hideAux()}
   function saveVideoUrl(){const url=linkUrl(document.getElementById('video-url')?.value);if(!url){toast('Escribe una URL válida.');return}insert(`<video controls playsinline style="width:min(100%,640px)" src="${esc(url)}"></video>`);hideAux()}
   function selected(){if(pickedMedia?.isConnected)return pickedMedia;const n=getSelection()?.anchorNode,e=n?.nodeType===1?n:n?.parentElement;return e?.closest?.('img,video,audio')||null}
-  function resizeMedia(){const m=selected();if(!m||!m.matches('img,video')){toast('Selecciona primero una imagen o video.');return}const n=prompt('Ancho del elemento en porcentaje (20–100):',String(parseInt(m.style.width)||45));if(n===null)return;m.style.width=Math.max(20,Math.min(100,parseInt(n)||45))+'%';m.style.maxWidth='100%'}
-  function alignMedia(where){const m=selected();if(!m){command(where==='center'?'justifyCenter':where==='right'?'justifyRight':'justifyLeft');return}m.style.display='block';m.style.marginLeft=where==='left'?'0':'auto';m.style.marginRight=where==='right'?'0':'auto'}
+  function resizeMedia(){const m=selected();if(!m||!m.matches('img,video')){toast('Selecciona primero una imagen o video.');return}const n=prompt('Ancho del elemento en porcentaje (20–100):',String(parseInt(m.style.width)||45));if(n===null)return;m.style.width=Math.max(20,Math.min(100,parseInt(n)||45))+'%';m.style.maxWidth='100%';scheduleEditorAutosave()}
+  function alignMedia(where){const m=selected();if(!m){command(where==='center'?'justifyCenter':where==='right'?'justifyRight':'justifyLeft');return}m.style.display='block';m.style.marginLeft=where==='left'?'0':'auto';m.style.marginRight=where==='right'?'0':'auto';scheduleEditorAutosave()}
   function imageLayoutDialog(){const m=pickedMedia?.isConnected?pickedMedia:null;if(!m||!m.matches('img')){toast('Selecciona primero una imagen.');return}showAux('Posición y marco de imagen','<p class="help-text">Ajusta cómo se integra esta imagen con el texto.</p><label class="form-label">Posición</label><select class="form-select" id="image-position"><option value="inline">En línea</option><option value="left">Flotante a la izquierda</option><option value="right">Flotante a la derecha</option><option value="overlay">Superpuesta sobre el texto</option></select><div class="split-fields"><div><label class="form-label">Horizontal (%) para superposición</label><input class="form-input" id="image-x" type="number" min="0" max="90" value="20"></div><div><label class="form-label">Vertical (%) para superposición</label><input class="form-input" id="image-y" type="number" min="0" max="90" value="20"></div></div><label class="form-label">Marco</label><select class="form-select" id="image-frame"><option value="none">Sin marco</option><option value="simple">Borde sencillo</option><option value="card">Marco tipo tarjeta</option></select>','<button class="outline-button" data-action="close-aux">Cancelar</button><button class="primary-button" data-action="save-image-layout">Aplicar</button>')}
-  function saveImageLayout(){const m=pickedMedia;if(!m?.isConnected){toast('Vuelve a seleccionar la imagen.');return}const p=document.getElementById('image-position').value,frame=document.getElementById('image-frame').value;m.style.float='';m.style.position='';m.style.top='';m.style.left='';m.style.zIndex='';m.style.transform='';m.style.display='';m.style.margin='';if(p==='left'){m.style.float='left';m.style.margin='4px 18px 12px 0'}else if(p==='right'){m.style.float='right';m.style.margin='4px 0 12px 18px'}else if(p==='overlay'){m.style.position='absolute';m.style.top=Math.max(0,Math.min(90,Number(document.getElementById('image-y').value)||20))+'%';m.style.left=Math.max(0,Math.min(90,Number(document.getElementById('image-x').value)||20))+'%';m.style.zIndex='2';m.style.transform='translate(-50%,-50%)'}else{m.style.display='inline-block';m.style.verticalAlign='middle'}m.style.border=frame==='none'?'':'1px solid var(--line)';m.style.padding=frame==='none'?'':frame==='card'?'12px':'5px';m.style.borderRadius=frame==='card'?'12px':'4px';m.style.background=frame==='none'?'':'var(--surface)';m.style.boxShadow=frame==='card'?'0 8px 24px rgba(20,30,50,.16)':'';hideAux()}
+  function saveImageLayout(){const m=pickedMedia;if(!m?.isConnected){toast('Vuelve a seleccionar la imagen.');return}const p=document.getElementById('image-position').value,frame=document.getElementById('image-frame').value;m.style.float='';m.style.position='';m.style.top='';m.style.left='';m.style.zIndex='';m.style.transform='';m.style.display='';m.style.margin='';if(p==='left'){m.style.float='left';m.style.margin='4px 18px 12px 0'}else if(p==='right'){m.style.float='right';m.style.margin='4px 0 12px 18px'}else if(p==='overlay'){m.style.position='absolute';m.style.top=Math.max(0,Math.min(90,Number(document.getElementById('image-y').value)||20))+'%';m.style.left=Math.max(0,Math.min(90,Number(document.getElementById('image-x').value)||20))+'%';m.style.zIndex='2';m.style.transform='translate(-50%,-50%)'}else{m.style.display='inline-block';m.style.verticalAlign='middle'}m.style.border=frame==='none'?'':'1px solid var(--line)';m.style.padding=frame==='none'?'':frame==='card'?'12px':'5px';m.style.borderRadius=frame==='card'?'12px':'4px';m.style.background=frame==='none'?'':'var(--surface)';m.style.boxShadow=frame==='card'?'0 8px 24px rgba(20,30,50,.16)':'';scheduleEditorAutosave();hideAux()}
   async function voice(){
     if(audioRecorder?.state==='recording'){audioRecorder.stop();toast('Guardando nota de audio…');return}
     if(recognition){recognition.stop();recognition=null;toast('Dictado detenido.');return}
@@ -485,9 +502,9 @@
   function saveArticle(){
     if(!requireEditor())return;
     const a=state.articles.find(x=>x.id===editorId),title=document.getElementById('editor-title')?.value.trim();if(!a)return;
+    const changed=flushEditorAutosave();
     if(!title){toast('Escribe un título.');return}if(state.articles.some(x=>x.id!==a.id&&x.title.toLowerCase()===title.toLowerCase())){toast('Ya existe un artículo con ese título.');return}
-    let revision=null;if(a.body!==clean(editor()?.innerHTML||'')||a.title!==title){revision={id:id(),articleId:a.id,title:a.title,body:a.body,date:new Date().toISOString()};state.revisions.unshift(revision);state.revisions=state.revisions.slice(0,50)}
-    a.title=title;a.body=clean(editor()?.innerHTML||'');a.updated=new Date().toISOString();save();queueCloudSync({articles:new Set([a.id]),revisions:new Set(revision?[revision.id]:[])});hideModal();articleId=a.id;articleTab='article';page='article';render();toast('Artículo guardado; sincronizando…')
+    if(!changed){save();queueCloudSync({articles:new Set([a.id]),revisions:new Set()})}hideModal();articleId=a.id;articleTab='article';page='article';render();toast('Artículo guardado automáticamente en la nube.')
   }
   function deleteArticle(idValue){
     if(!requireEditor())return;
@@ -580,14 +597,14 @@
     if(e.target.id==='image-input'){const f=e.target.files?.[0];e.target.value='';if(f)addImage(f)}
     if(e.target.id==='video-input'){const f=e.target.files?.[0];e.target.value='';if(f)addVideo(f)}
     if(e.target.id==='design-wallpaper'){const f=e.target.files?.[0];if(!f)return;if(!f.type.startsWith('image/')||f.size>3000000){toast('Elige una imagen de hasta 3 MB.');return}fileData(f,src=>{pendingWallpaper=src;updateWallpaperPreview()})}
-    if(e.target.id==='text-color'){focusEditor();document.execCommand('styleWithCSS',false,true);document.execCommand('foreColor',false,e.target.value)}
-    if(e.target.id==='highlight-color'){focusEditor();document.execCommand('styleWithCSS',false,true);document.execCommand('hiliteColor',false,e.target.value)}
+    if(e.target.id==='text-color'){focusEditor();document.execCommand('styleWithCSS',false,true);document.execCommand('foreColor',false,e.target.value);scheduleEditorAutosave()}
+    if(e.target.id==='highlight-color'){focusEditor();document.execCommand('styleWithCSS',false,true);document.execCommand('hiliteColor',false,e.target.value);scheduleEditorAutosave()}
   });
   document.addEventListener('input',e=>{
     if(e.target.id==='article-filter'){const wrap=document.getElementById('article-results');if(wrap)wrap.innerHTML=articleResults(e.target.value);applyButtonPalette()}
     if(e.target.id==='folder-filter'){const wrap=document.getElementById('folder-results');if(wrap)wrap.innerHTML=articleResults(e.target.value,activeFolderId);applyButtonPalette()}
     if(e.target.id==='design-overlay')updateWallpaperPreview();
-    if(e.target.id==='editor-canvas')wordCount()
+    if(e.target.id==='editor-canvas')wordCount();if(e.target.id==='editor-title')scheduleEditorAutosave()
   });
   document.addEventListener('paste',e=>{
     const ed=editor();if(!ed||!ed.contains(e.target))return;
@@ -604,9 +621,11 @@
     if(page==='present'){if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();moveSlide(1)}if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();moveSlide(-1)}if(e.key==='Escape')leavePresent();return}
     if(e.key==='Escape'&&!backdrop.hidden){const aux=document.getElementById('editor-aux');if(aux&&!aux.hidden)hideAux();else hideModal()}
   });
-  document.getElementById('storage-label')?.addEventListener('click',()=>{if(!currentUser){authDialog();return}if(!backdrop.hidden){toast('Guarda o cierra el editor antes de revisar la sincronización.');return}refreshCloudData()});
+  document.getElementById('storage-label')?.addEventListener('click',()=>{if(!currentUser){authDialog();return}if(!backdrop.hidden){flushEditorAutosave();toast('El artículo se guarda automáticamente. Cierra el editor para revisar el estado de la nube.');return}refreshCloudData()});
   window.addEventListener('offline',()=>{if(currentUser)setCloudStatus('Sin conexión · cambios locales')});
-  window.addEventListener('online',()=>{if(currentUser&&backdrop.hidden){setCloudStatus('Conexión recuperada · revisando cambios');refreshCloudData()}});
-  window.addEventListener('beforeunload',()=>{cameraStream?.getTracks().forEach(t=>t.stop());audioStream?.getTracks().forEach(t=>t.stop());recognition?.stop?.()});
+  window.addEventListener('online',()=>{if(!currentUser)return;setCloudStatus('Conexión recuperada · revisando cambios');if(!backdrop.hidden&&editor()){flushEditorAutosave();const pendingRevisions=state.revisions.filter(r=>r.articleId===editorId&&!knownRevisions.has(r.id));queueCloudSync({articles:new Set([editorId]),revisions:new Set(pendingRevisions.map(r=>r.id))})}else if(backdrop.hidden)refreshCloudData()});
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')flushEditorAutosave()});
+  window.addEventListener('pagehide',()=>flushEditorAutosave());
+  window.addEventListener('beforeunload',()=>{flushEditorAutosave();cameraStream?.getTracks().forEach(t=>t.stop());audioStream?.getTracks().forEach(t=>t.stop());recognition?.stop?.()});
   design();render();startSupabase().catch(error=>{cloudReady=false;cloudWriteEnabled=false;setCloudStatus('Sin sincronizar');updateAuthUI();toast('No se pudo iniciar la conexión con Supabase: '+authError(error))});
 })();
