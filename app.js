@@ -38,8 +38,8 @@
   function save(){try{localStorage.setItem(KEY,JSON.stringify(state));count();return true}catch(_){toast('Almacenamiento local lleno. Reduce el tamaño de los archivos.');return false}}
   const isUuid=v=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v||''));
   const hasSharedContent=s=>!!(s?.articles?.length||s?.folders?.length||s?.comments?.length||s?.revisions?.length);
-  function setCloudStatus(message){const el=document.getElementById('storage-label');if(el)el.textContent=message}
-  function updateAuthUI(){const b=document.getElementById('auth-button');if(b){b.textContent=currentUser?(currentUser.email?.split('@')[0]||'Mi cuenta'):'Iniciar sesión';b.title=currentUser?'Cuenta y cierre de sesión':'Inicia sesión para editar y colaborar'}setCloudStatus(currentUser?(cloudReady?'Guardado en la nube':'Conectando nube…'):'Lectura pública · inicia sesión para editar')}
+  function setCloudStatus(message){const el=document.getElementById('storage-label');if(el){el.textContent=message;el.title=currentUser?'Pulsa para revisar la sincronización y recuperar cambios pendientes':message;el.setAttribute('aria-label','Estado de sincronización: '+message+'. Pulsa para revisar cambios pendientes.')}}
+  function updateAuthUI(){const b=document.getElementById('auth-button');if(b){b.textContent=currentUser?(currentUser.email?.split('@')[0]||'Mi cuenta'):'Iniciar sesión';b.title=currentUser?'Cuenta y cierre de sesión':'Inicia sesión para editar y colaborar'}const status=document.getElementById('storage-label')?.textContent;if(!currentUser)setCloudStatus('Lectura pública · inicia sesión para editar');else if(['Sin sincronizar','Pendiente de sincronizar','Sin conexión · cambios locales','Cambios locales por recuperar','Sincronizando…','Cargando…','Conexión recuperada · revisando cambios'].includes(status))return;else setCloudStatus(cloudReady?'Guardado en la nube':'Conectando nube…')}
   function requireEditor(){if(currentUser)return true;toast('Inicia sesión para crear y editar en la wiki.');authDialog();return false}
   function authDialog(){
     if(currentUser){showModal('Tu cuenta','<p class="help-text">Sesión iniciada como</p><p><strong>'+esc(currentUser.email||'Usuario')+'</strong></p><p class="help-text">Tus artículos y cambios se guardan en la nube. Este navegador recordará tu sesión; cerrar sesión aquí no desconecta tus otros dispositivos.</p>','<button class="outline-button" data-action="close">Cerrar</button><button class="primary-button" data-action="sign-out">Cerrar sesión</button>',true);return}
@@ -72,7 +72,7 @@
   function localChangesAgainstCloud(local,data){
     const remoteArticles=new Map(data.articles.map(a=>[a.id,a])),remoteFolders=new Map(data.folders.map(f=>[f.id,f])),remoteComments=new Set(data.comments.map(c=>c.id)),remoteRevisions=new Set(data.revisions.map(r=>r.id));
     return {
-      articles:(local?.articles||[]).filter(a=>{const remote=remoteArticles.get(a.id);return !remote||(Date.parse(a.updated||'')||0)>(Date.parse(remote.updated||'')||0)}),
+      articles:(local?.articles||[]).filter(a=>{const remote=remoteArticles.get(a.id);return !remote||a.title!==remote.title||clean(a.body||'')!==clean(remote.body||'')||(a.designId||'minimal')!==(remote.designId||'minimal')||(a.folderId||'')!==(remote.folderId||'')}),
       folders:(local?.folders||[]).filter(f=>{const remote=remoteFolders.get(f.id);return !remote||remote.name!==f.name||(remote.description||'')!==(f.description||'')}),
       comments:(local?.comments||[]).filter(c=>!remoteComments.has(c.id)),
       revisions:(local?.revisions||[]).filter(r=>!remoteRevisions.has(r.id))
@@ -91,11 +91,11 @@
     const [articleResult,folderResult,commentResult,revisionResult]=results;
     const data={articles:(articleResult.data||[]).map(r=>({id:r.id,title:r.title,body:r.body_html||'',designId:r.design_id||'minimal',folderId:r.folder_id||'',createdBy:r.created_by||'',created:r.created_at,updated:r.updated_at})),folders:(folderResult.data||[]).map(r=>({id:r.id,name:r.name,description:r.description||'',createdBy:r.created_by||'',created:r.created_at})),comments:(commentResult.data||[]).map(r=>({id:r.id,articleId:r.article_id,authorId:r.author_id||'',author:r.author_name||'Preludiano/a',body:r.body,date:r.created_at})),revisions:(revisionResult.data||[]).map(r=>({id:r.id,articleId:r.article_id,editorId:r.editor_id||'',title:r.title,body:r.body_html||'',date:r.created_at}))};
     knownComments.clear();data.comments.forEach(c=>knownComments.add(c.id));knownRevisions.clear();data.revisions.forEach(r=>knownRevisions.add(r.id));
-    const backup=readLocalBackup(),localChanges=localChangesAgainstCloud(local,data),backupChanges=localChangesAgainstCloud(backup,data),pending=mergePendingSnapshots(backupChanges,localChanges);
+    const latestLocal=JSON.parse(JSON.stringify(state)),backup=readLocalBackup(),localChanges=localChangesAgainstCloud(latestLocal,data),backupChanges=localChangesAgainstCloud(backup,data),pending=mergePendingSnapshots(backupChanges,localChanges);
     pendingLocalImport=hasSharedContent(pending)?pending:null;
-    if(pendingLocalImport&&hasSharedContent(local))localBackup(local);
-    state={...JSON.parse(JSON.stringify(initial)),design:local.design,reading:local.reading,...data};cloudWriteEnabled=true;
-    cloudReady=true;save();render();updateAuthUI();if(currentUser&&pendingLocalImport)showLocalImportDialog()
+    if(pendingLocalImport&&hasSharedContent(latestLocal))localBackup(latestLocal);
+    state={...JSON.parse(JSON.stringify(initial)),design:latestLocal.design,reading:latestLocal.reading,...data};cloudWriteEnabled=true;
+    cloudReady=true;save();render();updateAuthUI();if(currentUser&&pendingLocalImport){setCloudStatus('Cambios locales por recuperar');showLocalImportDialog()}else if(currentUser)setCloudStatus('Guardado en la nube')
   }
   function mapLegacyIds(){
     const articleIds=new Map(),folderIds=new Map(),fix=(value,map)=>{if(!value)return '';if(isUuid(value))return value;if(!map.has(value))map.set(value,id());return map.get(value)};
@@ -134,13 +134,13 @@
     if(comments.length){const {error}=await supabase.from('comments').upsert(comments,{onConflict:'id',ignoreDuplicates:true});if(error)throw error;comments.forEach(c=>knownComments.add(c.id))}
     const revisions=revisionsToSync.filter(r=>!knownRevisions.has(r.id)).map(r=>({id:r.id,article_id:r.articleId,editor_id:r.editorId||currentUser.id,title:r.title,body_html:clean(r.body),created_at:r.date||now}));
     if(revisions.length){const {error}=await supabase.from('revisions').upsert(revisions,{onConflict:'id',ignoreDuplicates:true});if(error)throw error;revisions.forEach(r=>knownRevisions.add(r.id))}
-    save();setCloudStatus('Guardado en la nube')
+    save();try{localStorage.removeItem(BACKUP_KEY)}catch(_){}setCloudStatus('Guardado en la nube')
   }
   function queueCloudSync(changeSet){
     if(!currentUser)return;
-    if(!supabase||!cloudReady||!cloudWriteEnabled){setCloudStatus('Pendiente de sincronizar');return}
+    if(!supabase||!cloudReady||!cloudWriteEnabled||!navigator.onLine){localBackup(state);setCloudStatus(navigator.onLine?'Pendiente de sincronizar':'Sin conexión · cambios locales');return}
     setCloudStatus('Sincronizando…');
-    syncQueue=syncQueue.then(()=>syncCloudNow(changeSet)).catch(error=>{setCloudStatus('Sin sincronizar');toast('El cambio quedó en este dispositivo, pero no se sincronizó: '+authError(error))});
+    syncQueue=syncQueue.then(()=>syncCloudNow(changeSet)).catch(error=>{localBackup(state);setCloudStatus('Sin sincronizar');toast('El cambio quedó guardado en este dispositivo, pero no llegó a la nube: '+authError(error)+'. Puedes recuperarlo desde el estado de sincronización.')});
   }
   async function importLocalData(){
     if(!requireEditor()||!pendingLocalImport)return;
@@ -604,6 +604,9 @@
     if(page==='present'){if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();moveSlide(1)}if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();moveSlide(-1)}if(e.key==='Escape')leavePresent();return}
     if(e.key==='Escape'&&!backdrop.hidden){const aux=document.getElementById('editor-aux');if(aux&&!aux.hidden)hideAux();else hideModal()}
   });
+  document.getElementById('storage-label')?.addEventListener('click',()=>{if(!currentUser){authDialog();return}if(!backdrop.hidden){toast('Guarda o cierra el editor antes de revisar la sincronización.');return}refreshCloudData()});
+  window.addEventListener('offline',()=>{if(currentUser)setCloudStatus('Sin conexión · cambios locales')});
+  window.addEventListener('online',()=>{if(currentUser&&backdrop.hidden){setCloudStatus('Conexión recuperada · revisando cambios');refreshCloudData()}});
   window.addEventListener('beforeunload',()=>{cameraStream?.getTracks().forEach(t=>t.stop());audioStream?.getTracks().forEach(t=>t.stop());recognition?.stop?.()});
   design();render();startSupabase().catch(error=>{cloudReady=false;cloudWriteEnabled=false;setCloudStatus('Sin sincronizar');updateAuthUI();toast('No se pudo iniciar la conexión con Supabase: '+authError(error))});
 })();
