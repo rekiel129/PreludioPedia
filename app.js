@@ -187,7 +187,7 @@
       return
     }
     const targets=[...view.querySelectorAll('.hero,.hero-copy,.home-section,.folder-card,.article-tile,.page-title-row,.article-header,.article-tabs,.article-index,.wiki-card,.discussion-panel,.side-card')];
-    targets.forEach((element,index)=>{element.classList.add('motion-reveal');element.style.setProperty('--reveal-order',String(Math.min(index%7,6)))});
+    targets.forEach((element,index)=>{element.classList.add('motion-reveal');element.style.setProperty('--reveal-order',String(Math.min(index%7,6)));if(element.scrollHeight>window.innerHeight)element.classList.add('motion-visible')});
     if(!('IntersectionObserver' in window)){targets.forEach(element=>element.classList.add('motion-visible'));return}
     revealObserver=new IntersectionObserver(entries=>entries.forEach(entry=>{
       if(entry.isIntersecting){entry.target.classList.add('motion-visible');revealObserver?.unobserve(entry.target)}
