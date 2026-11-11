@@ -32,9 +32,12 @@ El proyecto conserva las reglas RLS del SQL que se ejecutó en Supabase; no uses
 
 ## Guardado y migración
 
-Con sesión iniciada, los artículos se guardan automáticamente en Supabase al escribir, aplicar formato, insertar medios o cambiar el título. Los cambios de cualquier cuenta autenticada se sincronizan con la wiki; la base de datos debe tener una política RLS que permita a usuarios autenticados actualizar los artículos. Carpetas, comentarios, revisiones e imágenes también se comparten mediante Supabase. La apariencia y las preferencias de lectura siguen guardadas en el navegador actual.
+Con sesión iniciada, los artículos se guardan automáticamente en Supabase al escribir, aplicar formato, insertar medios o cambiar el título. Tras aplicar la política SQL siguiente, cualquier cuenta autenticada podrá editar cualquier artículo. Carpetas, comentarios, revisiones e imágenes también se comparten mediante Supabase. La apariencia y las preferencias de lectura siguen guardadas en el navegador actual.
 
 Si este navegador tiene artículos locales y la base en la nube aún está vacía, PreludioPedia pregunta si quieres importarlos o empezar con la copia de la nube. Si eliges empezar con la nube, guarda una copia de los datos locales en el almacenamiento de este navegador antes de cambiar la vista.
 
 La vista previa de LaTeX usa MathJax y las fuentes se cargan desde CDNs, por lo que estas partes necesitan conexión a internet.
 
+
+
+Para permitir que cualquier cuenta autenticada edite artículos de otras personas, ejecuta una sola vez el contenido de [`allow-authenticated-article-edits.sql`](allow-authenticated-article-edits.sql) en **Supabase → SQL Editor**. La regla habilita únicamente la actualización de artículos; las reglas existentes de lectura, creación y borrado no se cambian. El editor usa `UPDATE` para un artículo que ya existe y `INSERT` solo al crear uno nuevo.
