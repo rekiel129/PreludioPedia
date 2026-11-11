@@ -590,3 +590,13 @@ button:not(:disabled):active{transform:translateY(1px) scale(.975)}
   .pascal-fractal-controls button{width:100%;min-height:38px;padding:8px 7px;white-space:normal}
   .pascal-fractal-controls output{grid-column:1/-1;margin-left:0;text-align:right}
 }
+
+.article-writing-space{margin:34px 0 0;padding:clamp(18px,3vw,30px);border:1px dashed color-mix(in srgb,var(--accent) 42%,var(--line));border-radius:15px;background:linear-gradient(145deg,color-mix(in srgb,var(--accent-soft) 62%,var(--surface)),var(--surface));}
+.article-writing-space h2{margin:5px 0 7px;font-size:clamp(19px,2.6vw,25px)}
+.article-writing-space>p{margin:0 0 15px;color:var(--muted);font-size:13px;line-height:1.6}
+.article-writing-space .form-input,.article-writing-space .form-textarea{margin-top:9px}
+.article-writing-space .form-textarea{min-height:130px;resize:vertical}
+.article-writing-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:12px}
+.article-writing-actions small{color:var(--muted);font-size:11px}
+.article-writing-guest{border-style:solid}
+@media(max-width:640px){.article-writing-space{margin-top:24px;padding:17px}.article-writing-actions{align-items:stretch;flex-direction:column}.article-writing-actions .primary-button{width:100%}}
