@@ -131,7 +131,7 @@
     const folders=changed(state.folders,'folders').map(f=>({id:f.id,name:f.name,description:f.description||'',created_by:f.createdBy||currentUser.id,created_at:f.created||now}));
     if(folders.length){const {error}=await supabase.from('folders').upsert(folders,{onConflict:'id'});if(error)throw error}
     const articles=articlesToSync.map(a=>({id:a.id,title:a.title,body_html:clean(a.body),design_id:a.designId||'minimal',folder_id:a.folderId||null,created_by:a.createdBy||currentUser.id,created_at:a.created||now,updated_at:a.updated||now}));
-    if(articles.length){const {error}=await supabase.from('articles').upsert(articles,{onConflict:'id'});if(error)throw error}
+    for(const article of articles){const {id:articleId,created_by,created_at,...changes}=article;const {data,error}=await supabase.from('articles').update(changes).eq('id',articleId).select('id');if(error)throw error;if(!data?.length){const {error:insertError}=await supabase.from('articles').insert(article);if(insertError)throw insertError}}
     const comments=changed(state.comments,'comments').filter(c=>!knownComments.has(c.id)).map(c=>({id:c.id,article_id:c.articleId,author_id:c.authorId||currentUser.id,author_name:c.author||'Preludiano/a',body:c.body,created_at:c.date||now}));
     if(comments.length){const {error}=await supabase.from('comments').upsert(comments,{onConflict:'id',ignoreDuplicates:true});if(error)throw error;comments.forEach(c=>knownComments.add(c.id))}
     const revisions=revisionsToSync.filter(r=>!knownRevisions.has(r.id)).map(r=>({id:r.id,article_id:r.articleId,editor_id:r.editorId||currentUser.id,title:r.title,body_html:clean(r.body),created_at:r.date||now}));
