@@ -261,7 +261,8 @@
   function articleView(a){
     const content=indexedBody(a.body),probe=document.createElement('div');probe.innerHTML=content.html;const empty=!probe.textContent.trim()&&!probe.querySelector('img,video,audio');
     const designId=designDefs.some(d=>d.id===a.designId)?a.designId:'minimal';
-    const current=articleTab==='discussion'?discussion(a):articleTab==='history'?historyPanel(a):`<div class="article-layout"><article class="wiki-card article-design article-design-${designId}"><div class="wiki-content" id="article-content">${empty?'<div class="article-empty"><p>Este artículo está en blanco.</p><button class="primary-button" data-action="edit" data-id="'+esc(a.id)+'">Empezar a escribir</button></div>':content.html}</div></article><aside class="article-index"><strong>Índice</strong>${content.headings.length?`<ol>${content.headings.map(h=>`<li class="level-${h.level}"><a href="#${h.id}">${esc(h.text)}</a></li>`).join('')}</ol>`:`<p>Añade encabezados desde el editor para generar un índice automático.</p>`}</aside></div>`;
+    const writingSpace=currentUser?`<section class="article-writing-space" aria-labelledby="article-writing-title"><div class="eyebrow">APORTE NUEVO</div><h2 id="article-writing-title">Añade algo al artículo</h2><p>Lo que escribas aparecerá al final. Puedes añadir un título para crear una sección nueva.</p><input class="form-input" id="new-section-title" maxlength="120" placeholder="Título de sección (opcional)"><textarea class="form-textarea" id="new-section-content" rows="5" placeholder="Escribe aquí una idea, explicación o ejemplo…"></textarea><div class="article-writing-actions"><small>El aporte se guarda en la wiki al añadirlo.</small><button class="primary-button" data-action="append-article-content" data-id="${esc(a.id)}">＋ Añadir al artículo</button></div></section>`:`<section class="article-writing-space article-writing-guest"><div class="eyebrow">APORTE NUEVO</div><h2>Añade algo al artículo</h2><p>Inicia sesión para escribir y guardar una nueva parte de esta página.</p><button class="outline-button" data-action="auth">Iniciar sesión para escribir</button></section>`;
+    const current=articleTab==='discussion'?discussion(a):articleTab==='history'?historyPanel(a):`<div class="article-layout"><article class="wiki-card article-design article-design-${designId}"><div class="wiki-content" id="article-content">${empty?'<div class="article-empty"><p>Este artículo está en blanco.</p><button class="primary-button" data-action="edit" data-id="'+esc(a.id)+'">Empezar a escribir</button></div>':content.html}</div>${writingSpace}</article><aside class="article-index"><strong>Índice</strong>${content.headings.length?`<ol>${content.headings.map(h=>`<li class="level-${h.level}"><a href="#${h.id}">${esc(h.text)}</a></li>`).join('')}</ol>`:`<p>Añade encabezados desde el editor para generar un índice automático.</p>`}</aside></div>`;
     const categoryCrumb=a.folderId?`<button class="link-button" data-open-folder="${esc(a.folderId)}">${esc(folderName(a.folderId))}</button>`:`<button class="link-button" data-page="articles">Sin carpeta</button>`;
     const deleteButton=currentUser&&a.createdBy===currentUser.id?`<button class="danger-button" data-action="delete-article" data-id="${esc(a.id)}" title="Borrar artículo">⌫ Borrar</button>`:'';
     return `<div class="page-wrap"><div class="breadcrumb"><button class="link-button brand-breadcrumb" data-page="home" aria-label="Inicio">${logoMarkup('breadcrumb-logo','')}</button><span>/</span>${categoryCrumb}<span>/</span><span>${esc(a.title)}</span></div><header class="article-header"><div><div class="eyebrow">${esc(folderName(a.folderId))}</div><h1>${esc(a.title)}</h1><div class="article-meta">Actualizado ${new Date(a.updated).toLocaleString('es-CO')}</div></div><div class="article-actions"><button class="outline-button" data-action="present" data-id="${esc(a.id)}">▷ Presentar</button><button class="primary-button" data-action="edit" data-id="${esc(a.id)}">✎ Editar</button>${deleteButton}</div></header><nav class="article-tabs" aria-label="Pestañas del artículo"><button class="article-tab ${articleTab==='article'?'active':''}" data-action="article-tab" data-tab="article">Artículo</button><button class="article-tab ${articleTab==='discussion'?'active':''}" data-action="article-tab" data-tab="discussion">Discusión <span>${state.comments.filter(c=>c.articleId===a.id).length}</span></button><button class="article-tab ${articleTab==='history'?'active':''}" data-action="article-tab" data-tab="history">Historial</button></nav>${current}</div>`
@@ -506,6 +507,16 @@
     if(!title){toast('Escribe un título.');return}if(state.articles.some(x=>x.id!==a.id&&x.title.toLowerCase()===title.toLowerCase())){toast('Ya existe un artículo con ese título.');return}
     if(!changed){save();queueCloudSync({articles:new Set([a.id]),revisions:new Set()})}hideModal();articleId=a.id;articleTab='article';page='article';render();toast('Artículo guardado automáticamente en la nube.')
   }
+  function appendArticleContent(articleIdValue){
+    if(!requireEditor())return;
+    const a=state.articles.find(item=>item.id===articleIdValue);if(!a)return;
+    const title=document.getElementById('new-section-title')?.value.trim()||'',text=document.getElementById('new-section-content')?.value.trim()||'';
+    if(!text){toast('Escribe algo antes de añadirlo al artículo.');return}
+    const paragraphs=text.split(/\n\s*\n/).map(part=>'<p>'+esc(part).replace(/\n/g,'<br>')+'</p>').join('');
+    const addition=(title?'<h2>'+esc(title)+'</h2>':'')+paragraphs;
+    const revision={id:id(),articleId:a.id,editorId:currentUser.id,title:a.title,body:a.body,date:new Date().toISOString()};state.revisions.unshift(revision);state.revisions=state.revisions.slice(0,50);
+    a.body=clean((a.body||'')+addition);a.updated=new Date().toISOString();save();queueCloudSync({articles:new Set([a.id]),revisions:new Set([revision.id])});articleTab='article';render();toast('Aporte añadido; sincronizando con la nube.');setTimeout(()=>document.querySelector('.article-writing-space')?.scrollIntoView({behavior:'smooth',block:'center'}),60)
+  }
   function deleteArticle(idValue){
     if(!requireEditor())return;
     const a=state.articles.find(x=>x.id===idValue);if(!a)return;
@@ -567,6 +578,7 @@
       case 'restore-revision':restoreRevision(b.dataset.id);break;
       case 'edit':edit(b.dataset.id);break;
       case 'save-article':saveArticle();break;
+      case 'append-article-content':appendArticleContent(b.dataset.id);break;
       case 'delete-article':deleteArticle(b.dataset.id);break;
       case 'confirm-delete-article':confirmDeleteArticle(b.dataset.id);break;
       case 'customize':customize();break;
