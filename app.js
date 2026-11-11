@@ -88,16 +88,18 @@
   let refreshSequence=0;
   async function refreshCloudData(){
     if(!supabase)return;const sequence=++refreshSequence,local=JSON.parse(JSON.stringify(state));setCloudStatus('Cargando…');
-    let results;try{results=await Promise.all([supabase.from('articles').select('*').order('updated_at',{ascending:false}),supabase.from('folders').select('*').order('created_at',{ascending:true}),supabase.from('comments').select('*').order('created_at',{ascending:false}),supabase.from('revisions').select('*').order('created_at',{ascending:false})])}catch(error){cloudReady=false;cloudWriteEnabled=false;setCloudStatus('Sin sincronizar');render();toast('No se pudo leer la wiki en la nube: '+authError(error));return}
-    if(sequence!==refreshSequence)return;const failed=results.find(r=>r.error);if(failed){cloudReady=false;cloudWriteEnabled=false;setCloudStatus('Sin sincronizar');toast('No se pudo leer la wiki en la nube: '+authError(failed.error));render();return}
-    const [articleResult,folderResult,commentResult,revisionResult]=results;
+    const requests=[['articles',supabase.from('articles').select('*').order('updated_at',{ascending:false})],['folders',supabase.from('folders').select('*').order('created_at',{ascending:true})],['comments',supabase.from('comments').select('*').order('created_at',{ascending:false})],['revisions',supabase.from('revisions').select('*').order('created_at',{ascending:false})]];
+    const entries=await Promise.all(requests.map(async([name,request])=>{try{const result=await request;return [name,result?.error?{data:[],error:result.error}:result]}catch(error){return [name,{data:[],error}]}}));
+    if(sequence!==refreshSequence)return;const results=Object.fromEntries(entries),articleResult=results.articles;
+    if(articleResult.error){cloudReady=false;cloudWriteEnabled=false;setCloudStatus('Sin sincronizar');render();toast('No se pudo leer la wiki en la nube: '+authError(articleResult.error));return}
+    const unavailable=entries.filter(([,result])=>result.error).map(([name])=>name),folderResult=results.folders,commentResult=results.comments,revisionResult=results.revisions;
     const data={articles:(articleResult.data||[]).map(r=>({id:r.id,title:r.title,body:r.body_html||'',designId:r.design_id||'minimal',folderId:r.folder_id||'',createdBy:r.created_by||'',created:r.created_at,updated:r.updated_at})),folders:(folderResult.data||[]).map(r=>({id:r.id,name:r.name,description:r.description||'',createdBy:r.created_by||'',created:r.created_at})),comments:(commentResult.data||[]).map(r=>({id:r.id,articleId:r.article_id,authorId:r.author_id||'',author:r.author_name||'Preludiano/a',body:r.body,date:r.created_at})),revisions:(revisionResult.data||[]).map(r=>({id:r.id,articleId:r.article_id,editorId:r.editor_id||'',title:r.title,body:r.body_html||'',date:r.created_at}))};
     knownComments.clear();data.comments.forEach(c=>knownComments.add(c.id));knownRevisions.clear();data.revisions.forEach(r=>knownRevisions.add(r.id));
     const latestLocal=JSON.parse(JSON.stringify(state)),backup=readLocalBackup(),localChanges=localChangesAgainstCloud(latestLocal,data),backupChanges=localChangesAgainstCloud(backup,data,true),pending=mergePendingSnapshots(backupChanges,localChanges);
     pendingLocalImport=hasSharedContent(pending)?pending:null;
     if(pendingLocalImport&&hasSharedContent(latestLocal))localBackup(latestLocal);
     state={...JSON.parse(JSON.stringify(initial)),design:latestLocal.design,reading:latestLocal.reading,...data};cloudWriteEnabled=true;
-    cloudReady=true;save();render();updateAuthUI();if(currentUser&&pendingLocalImport){setCloudStatus('Cambios locales por recuperar');showLocalImportDialog()}else if(currentUser)setCloudStatus('Guardado en la nube')
+    cloudReady=true;save();render();updateAuthUI();if(currentUser&&pendingLocalImport){setCloudStatus('Cambios locales por recuperar');showLocalImportDialog()}else if(unavailable.length){setCloudStatus(currentUser?'Contenido cargado · algunas secciones no están disponibles':'Lectura pública · contenido disponible');if(currentUser)toast('El artículo se cargó, pero no se pudieron consultar: '+unavailable.join(', ')+'.')}else if(currentUser)setCloudStatus('Guardado en la nube')
   }
   function mapLegacyIds(){
     const articleIds=new Map(),folderIds=new Map(),fix=(value,map)=>{if(!value)return '';if(isUuid(value))return value;if(!map.has(value))map.set(value,id());return map.get(value)};
@@ -641,3 +643,4 @@
   window.addEventListener('beforeunload',()=>{flushEditorAutosave();cameraStream?.getTracks().forEach(t=>t.stop());audioStream?.getTracks().forEach(t=>t.stop());recognition?.stop?.()});
   design();render();startSupabase().catch(error=>{cloudReady=false;cloudWriteEnabled=false;setCloudStatus('Sin sincronizar');updateAuthUI();toast('No se pudo iniciar la conexión con Supabase: '+authError(error))});
 })();
+
