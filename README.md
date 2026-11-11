@@ -14,6 +14,7 @@ El logotipo transparente de la wiki se guarda en `assets/preludiopedia-logo-tran
 - Presentación a pantalla completa, con controles y navegación por teclado.
 - Tema claro u oscuro, colores, imagen de fondo, CSS personalizado y preferencias de lectura.
 - Inicio de sesión y guardado compartido en Supabase.
+- Guardado automático de artículos: cada pausa breve al escribir sincroniza los cambios; el editor conserva una copia local y muestra si hay algo pendiente de subir.
 
 ## Supabase
 
@@ -31,7 +32,7 @@ El proyecto conserva las reglas RLS del SQL que se ejecutó en Supabase; no uses
 
 ## Guardado y migración
 
-Con sesión iniciada, los artículos, carpetas, comentarios, revisiones e imágenes se comparten mediante Supabase. La apariencia y las preferencias de lectura siguen guardadas en el navegador actual.
+Con sesión iniciada, los artículos se guardan automáticamente en Supabase al escribir, aplicar formato, insertar medios o cambiar el título. Los cambios de cualquier cuenta autenticada se sincronizan con la wiki; la base de datos debe tener una política RLS que permita a usuarios autenticados actualizar los artículos. Carpetas, comentarios, revisiones e imágenes también se comparten mediante Supabase. La apariencia y las preferencias de lectura siguen guardadas en el navegador actual.
 
 Si este navegador tiene artículos locales y la base en la nube aún está vacía, PreludioPedia pregunta si quieres importarlos o empezar con la copia de la nube. Si eliges empezar con la nube, guarda una copia de los datos locales en el almacenamiento de este navegador antes de cambiar la vista.
 
